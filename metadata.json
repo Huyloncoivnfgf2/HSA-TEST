@@ -1,0 +1,6 @@
+{
+  "name": "Ôn Thi ĐGNL HSA - Luyện Đề Chuẩn ĐHQGHN",
+  "description": "Ứng dụng luyện thi Đánh giá năng lực (HSA - ĐHQGHN) thông minh với 3 phần Toán học, Ngữ văn và Khoa học. Tự động trích xuất đề thi bằng AI, hiển thị công thức KaTeX, chế độ ôn tập và kiểm tra bấm giờ chuẩn xác.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
