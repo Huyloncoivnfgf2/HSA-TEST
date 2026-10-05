@@ -106,7 +106,7 @@ ${standardTopicsStr}
   contents.push({ text: promptText });
 
   const response = await ai.models.generateContent({
-    model: 'gemini-2.0-flash',
+    model: 'gemini-3.8-flash',
     contents: contents.length === 1 ? contents[0].text : { parts: contents },
     config: {
       systemInstruction,
@@ -317,7 +317,7 @@ export async function parseAnswerKeyWithGemini(payload: AnswerKeyParsePayload) {
   contents.push({ text: prompt });
 
   const response = await ai.models.generateContent({
-    model: 'gemini-2.0-flash',
+    model: 'gemini-3.8-flash',
     contents: contents.length === 1 ? contents[0].text : { parts: contents },
     config: {
       systemInstruction,
@@ -395,7 +395,7 @@ TUYỆT ĐỐI CHỈ DỰA TRÊN DỮ LIỆU THẬT TRÊN, KHÔNG TỰ BỊA Đ�
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-3.8-flash',
       contents: prompt,
       config: {
         systemInstruction: 'Bạn là chuyên gia tư vấn khảo thí HSA ĐHQGHN nghiêm túc, sâu sát và động viên thí sinh.',
