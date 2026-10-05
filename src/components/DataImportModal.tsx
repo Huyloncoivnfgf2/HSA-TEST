@@ -691,7 +691,8 @@ Câu 17: ..."
                           reader.onload = (ev) => {
                             try {
                               const json = JSON.parse(ev.target?.result as string);
-                              const validated = validateQuestionsJson(json);
+                              // Validation Logic
+                              const validated = validateQuestionsWithRules(json);
                               if (validated) {
                                 setPreviewQuestions(validated);
                               } else {
@@ -1163,4 +1164,49 @@ function normalizeForComparison(str: string): string {
     .toLowerCase()
     .replace(/[\s\$\\\{\}\(\)\_\^\,\.\:\;\-\+\*\=\/\'\"\`]/g, '')
     .trim();
+}
+
+function validateQuestionsWithRules(questions: Question[]): Question[] {
+  return questions.map((q) => {
+    let hasWarning = q.hasWarning || false;
+    let warningReason = q.warningReason || '';
+
+    if (q.subject === 'literature') {
+      if (q.type === 'fill-in') {
+        hasWarning = true;
+        warningReason = 'Thiếu lựa chọn (Văn học chỉ hỗ trợ trắc nghiệm)';
+      }
+    } else if (q.subject === 'math' || q.subject === 'science') {
+      // Detection:
+      // 1. If options A/B/C/D exist, force MCQ
+      if (q.options && q.options.length >= 4) {
+        if (q.type === 'fill-in') {
+          // It's MCQ actually.
+          q.type = 'multiple-choice';
+        }
+        // If type is MCQ but answer is a number (should be index 0-3), flag
+        if (q.type === 'multiple-choice' && !isNaN(Number(q.correctAnswer)) && Number(q.correctAnswer) >= 4) {
+           hasWarning = true;
+           warningReason = 'Câu trắc nghiệm có đáp án dạng giá trị số';
+        }
+      } else {
+        // No options. Detect if it's really fill-in
+        if (q.type === 'multiple-choice') {
+             // Maybe missing options?
+        }
+        // Fill-in check
+        const isFillIn = q.questionText.match(/(tính|giá trị|kết quả|tìm|là)/i);
+        if (isFillIn) {
+             q.type = 'fill-in';
+             // If fill-in but answer is A-D, flag
+             if (typeof q.correctAnswer === 'string' && /^[ABCD]$/i.test(q.correctAnswer)) {
+                hasWarning = true;
+                warningReason = 'Câu điền đáp án nhưng đáp án là chữ cái';
+             }
+        }
+      }
+    }
+
+    return { ...q, hasWarning, warningReason };
+  });
 }

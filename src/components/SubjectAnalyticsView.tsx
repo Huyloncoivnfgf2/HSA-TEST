@@ -49,6 +49,21 @@ export const SubjectAnalyticsView: React.FC<SubjectAnalyticsViewProps> = ({
   const totalCorrect = topicStats.reduce((acc, t) => acc + t.correctCount, 0);
   const overallAccuracy = totalAttempted > 0 ? Math.round((totalCorrect / totalAttempted) * 100) : 0;
 
+  // Split by type (for Math/Science)
+  const mcqQuestions = questions.filter(q => q.type === 'multiple-choice');
+  const fillInQuestions = questions.filter(q => q.type === 'fill-in');
+
+  // Helper to calculate accuracy for a subset
+  const getAccuracyForSubset = (qSubset: Question[]) => {
+      const stats = topicStats.filter(t => qSubset.some(q => q.subTopic === t.topic));
+      const attempted = stats.reduce((acc, t) => acc + t.totalAnswered, 0);
+      const correct = stats.reduce((acc, t) => acc + t.correctCount, 0);
+      return attempted > 0 ? Math.round((correct / attempted) * 100) : 0;
+  };
+
+  const mcqAccuracy = getAccuracyForSubset(mcqQuestions);
+  const fillInAccuracy = getAccuracyForSubset(fillInQuestions);
+
   // Estimation: points needed to hit target
   const currentEstScore = Math.round((overallAccuracy / 100) * goals.maxScorePerSubject);
   const scoreGap = Math.max(0, targetScore - currentEstScore);
@@ -131,8 +146,10 @@ export const SubjectAnalyticsView: React.FC<SubjectAnalyticsViewProps> = ({
             <div className="text-lg font-bold mt-0.5">{totalAttempted} câu</div>
           </div>
           <div className="p-3 rounded-2xl bg-white/10">
-            <div className="text-slate-300">Độ chính xác chung</div>
-            <div className="text-lg font-bold mt-0.5 text-emerald-300">{overallAccuracy}%</div>
+            <div className="text-slate-300">Độ chính xác: Trắc nghiệm / Điền</div>
+            <div className="text-lg font-bold mt-0.5 text-emerald-300">
+                {mcqAccuracy}% / {fillInAccuracy}%
+            </div>
           </div>
           <div className="p-3 rounded-2xl bg-white/10">
             <div className="text-slate-300">Điểm ước lượng</div>

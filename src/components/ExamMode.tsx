@@ -1388,6 +1388,8 @@ export const ExamMode: React.FC<ExamModeProps> = ({
                     </label>
                     <input
                       type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
                       value={fillInText}
                       onChange={(e) => handleFillInChange(e.target.value)}
                       placeholder="Nhập đáp án số hoặc chữ..."
@@ -1499,6 +1501,8 @@ export const ExamMode: React.FC<ExamModeProps> = ({
                   </label>
                   <input
                     type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
                     value={fillInText}
                     onChange={(e) => handleFillInChange(e.target.value)}
                     placeholder="Nhập đáp án số hoặc chữ..."

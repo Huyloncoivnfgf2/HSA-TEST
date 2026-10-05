@@ -4,12 +4,33 @@ export type ScienceSubSubject = 'Vật lí' | 'Hóa học' | 'Sinh học' | 'L�
 
 export type DifficultyLevel = 'dễ' | 'trung bình' | 'khó';
 
-export type QuestionReportReason =
-  | 'sai đáp án'
-  | 'đề thiếu/sai nội dung'
-  | 'công thức hỏng'
-  | 'hình lỗi'
-  | 'khác';
+export type AnnotationType = 'highlight' | 'underline' | 'freehand';
+
+export interface Annotation {
+  id: string;
+  type: AnnotationType;
+  questionId: string;
+  color: string;
+  // For text annotations (highlight/underline)
+  startIndex?: number; // character index
+  endIndex?: number; // character index
+  textContent?: string; // verify context
+  // For freehand annotations
+  points?: { x: number; y: number }[];
+  lineWidth?: number;
+}
+
+export interface ScratchpadPage {
+  id: string;
+  strokes: { points: { x: number; y: number }[]; color: string; lineWidth: number }[];
+}
+
+export interface QuestionAnnotations {
+  questionId: string;
+  annotations: Annotation[];
+  scratchpadPages: ScratchpadPage[];
+  currentPageIndex: number;
+}
 
 export interface QuestionEditHistory {
   id: string;

@@ -162,6 +162,32 @@ export const QuestionEditModal: React.FC<QuestionEditModalProps> = ({
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
           {activeTab === 'edit' ? (
             <>
+              {/* Question Type Selection */}
+              {question.subject !== 'literature' && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    Dạng câu hỏi:
+                  </label>
+                  <select
+                    value={question.type}
+                    onChange={(e) => {
+                      // Note: This needs careful handling of state updates for options/correctAnswer
+                      // which are outside this simplified edit
+                      console.log('Type changed', e.target.value);
+                    }}
+                    className="w-full p-2 text-xs sm:text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                  >
+                    <option value="multiple-choice">Trắc nghiệm</option>
+                    <option value="fill-in">Điền đáp án</option>
+                  </select>
+                </div>
+              )}
+              {question.subject === 'literature' && (
+                <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-300">
+                  ⚠️ Câu hỏi Định tính (Ngữ văn) bắt buộc là dạng Trắc nghiệm.
+                </div>
+              )}
+
               {/* Question Text */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
