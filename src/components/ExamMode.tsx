@@ -25,6 +25,17 @@ import { ConfirmationModal } from './ConfirmationModal';
 import { ReportQuestionModal } from './ReportQuestionModal';
 import { QuestionEditModal } from './QuestionEditModal';
 import { ExamToolbar } from './ExamToolbar';
+import { AnnotatedText } from './AnnotatedText';
+import { DrawingOverlay } from './DrawingOverlay';
+import { FloatingRuler } from './FloatingRuler';
+import { ScratchpadDrawer } from './ScratchpadDrawer';
+import { ClusterPassageCard } from './ClusterPassageCard';
+import { useQuestionAnnotations } from '../hooks/useQuestionAnnotations';
+import {
+  ensureClusterQuestionsConsecutive,
+  getQuestionAnnotations,
+  getGroupAnnotations,
+} from '../services/annotationService';
 import {
   Clock,
   Flag,
@@ -51,6 +62,7 @@ import {
   TrendingUp,
   TrendingDown,
   BookX,
+  BookOpen,
   Zap,
   ShieldAlert,
   Edit3,
@@ -99,25 +111,112 @@ export const ExamMode: React.FC<ExamModeProps> = ({
     breakEndTime,
   } = session;
 
-  const questions = subjectQuestions[currentSubject] || [];
+  const rawQuestions = subjectQuestions[currentSubject] || [];
+  const questions = useMemo(
+    () => ensureClusterQuestionsConsecutive(rawQuestions),
+    [rawQuestions]
+  );
   const [currentIndex, setCurrentIndex] = useState<number>(0);
+  const currentQ = questions[currentIndex];
+  const questionCardRef = useRef<HTMLDivElement>(null);
+
+  // Hook for Question Annotations & Scratchpad
+  const {
+    activeTool,
+    setActiveTool,
+    activeColor,
+    setActiveColor,
+    strokeWidth,
+    setStrokeWidth,
+    lineWidth,
+    isRulerOpen,
+    setIsRulerOpen,
+    rulerState,
+    setRulerState,
+    showAnnotations,
+    setShowAnnotations,
+    isScratchpadOpen,
+    setIsScratchpadOpen,
+    textAnnotations,
+    strokes,
+    addTextAnnotation,
+    removeTextAnnotation,
+    addStroke,
+    eraseStroke,
+    handleUndo,
+    handleRedo,
+    handleClearAll,
+    canUndo,
+    canRedo,
+    groupTextAnnotations,
+    groupStrokes,
+    addGroupAnnotation,
+    removeGroupAnnotation,
+    addGroupStroke,
+    eraseGroupStroke,
+    isGlobalScratchpadMode,
+    setIsGlobalScratchpadMode,
+    scratchpadPages,
+    currentScratchpadPage,
+    handleAddScratchpadPage,
+    handleChangeScratchpadPage,
+    handleDeleteScratchpadPage,
+    handleSaveScratchpadPageStrokes,
+    handleToggleBgPattern,
+    scratchpadStatusMap,
+  } = useQuestionAnnotations({
+    contextId: session.id,
+    currentQuestionId: currentQ?.id,
+    groupId: currentQ?.groupId,
+    fullQuestionText: currentQ?.questionText,
+  });
+
+  // Cluster calculations
+  const uniqueGroupIds = useMemo(() => {
+    const ids: string[] = [];
+    questions.forEach((q) => {
+      if (q.groupId && !ids.includes(q.groupId)) ids.push(q.groupId);
+    });
+    return ids;
+  }, [questions]);
+
+  const clusterQuestions = useMemo(() => {
+    if (!currentQ?.groupId) return [];
+    return questions.filter((q) => q.groupId === currentQ.groupId);
+  }, [questions, currentQ?.groupId]);
+
+  const currentClusterIndex = useMemo(() => {
+    if (!currentQ?.groupId) return 0;
+    return clusterQuestions.findIndex((q) => q.id === currentQ.id);
+  }, [clusterQuestions, currentQ?.id]);
+
+  const handlePrevInCluster = () => {
+    if (currentClusterIndex > 0) {
+      const prevQ = clusterQuestions[currentClusterIndex - 1];
+      const targetIdx = questions.findIndex((q) => q.id === prevQ.id);
+      if (targetIdx !== -1) setCurrentIndex(targetIdx);
+    }
+  };
+
+  const handleNextInCluster = () => {
+    if (currentClusterIndex < clusterQuestions.length - 1) {
+      const nextQ = clusterQuestions[currentClusterIndex + 1];
+      const targetIdx = questions.findIndex((q) => q.id === nextQ.id);
+      if (targetIdx !== -1) setCurrentIndex(targetIdx);
+    }
+  };
+
   const [fillInText, setFillInText] = useState<string>('');
   const [isSubmitConfirmOpen, setIsSubmitConfirmOpen] = useState<boolean>(false);
   const [isExitConfirmOpen, setIsExitConfirmOpen] = useState<boolean>(false);
   const [isMobilePaletteOpen, setIsMobilePaletteOpen] = useState<boolean>(false);
   const [isMobileGroupOpen, setIsMobileGroupOpen] = useState<boolean>(true);
   const [resultFilter, setResultFilter] = useState<'all' | 'wrong' | 'correct' | 'unanswered'>('all');
-  const [activeTool, setActiveTool] = useState<
-    'pointer' | 'pen' | 'highlight' | 'underline' | 'eraser'
-  >('pointer');
-  const [activeColor, setActiveColor] = useState('#00e5ff');
-  const [strokeWidth, setStrokeWidth] = useState<'thin' | 'medium' | 'thick'>('medium');
-  const [isRulerOpen, setIsRulerOpen] = useState(false);
-  const [showAnnotations, setShowAnnotations] = useState(true);
 
   // Report & Edit Modal states
   const [reportingQuestion, setReportingQuestion] = useState<Question | null>(null);
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
+  const [reviewScratchpadQuestion, setReviewScratchpadQuestion] = useState<Question | null>(null);
   const [taggedQuestions, setTaggedQuestions] = useState<Record<string, FSRSReviewReason>>({});
   const hasEnrolledFSRSRef = useRef<boolean>(false);
 
@@ -663,7 +762,7 @@ export const ExamMode: React.FC<ExamModeProps> = ({
     return (
       <div className="max-w-4xl mx-auto px-4 py-8 space-y-8 animate-in fade-in duration-300">
         {/* Banner summary */}
-        <div className="glass-card p-8 sm:p-10 text-white shadow-xl text-center space-y-6 relative overflow-hidden">
+        <div className="p-8 sm:p-10 rounded-3xl bg-gradient-to-tr from-emerald-600 via-teal-700 to-slate-900 text-white shadow-xl text-center space-y-6 relative overflow-hidden">
           <div className="w-16 h-16 mx-auto rounded-3xl bg-white/20 backdrop-blur-md flex items-center justify-center">
             <Trophy className="w-8 h-8 text-amber-300" />
           </div>
@@ -672,7 +771,7 @@ export const ExamMode: React.FC<ExamModeProps> = ({
             <span className="px-3.5 py-1 rounded-full text-xs font-bold bg-white/10 uppercase tracking-wider">
               {mode === 'full-hsa' ? 'Kết quả bài thi chuẩn HSA ĐHQGHN' : 'Kết quả kiểm tra môn'}
             </span>
-            <h1 className="font-display text-7xl font-bold tracking-tight gradient-text">
+            <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight">
               {calculatedScore}{' '}
               <span className="text-2xl font-normal text-emerald-200">/ {totalMaxScore} điểm</span>
             </h1>
@@ -963,6 +1062,13 @@ export const ExamMode: React.FC<ExamModeProps> = ({
               const isUnanswered = userAns === undefined;
               const timeSpent = questionTimeMap[q.id] || 0;
 
+              // Annotations and scratchpad saved for this question
+              const qAnn = getQuestionAnnotations(session.id, q.id);
+              const qGrpAnn = q.groupId ? getGroupAnnotations(session.id, q.groupId) : null;
+              const hasScratchpadNotes = (qAnn.scratchpadPages || []).some(
+                (p) => p.strokes && p.strokes.length > 0
+              );
+
               // Error classification for this specific question
               let errorTag: ErrorClassification | null = null;
               if (isUnanswered) {
@@ -974,7 +1080,7 @@ export const ExamMode: React.FC<ExamModeProps> = ({
               return (
                 <div
                   key={q.id}
-                  className={`p-6 rounded-3xl border transition-all space-y-4 bg-white dark:bg-slate-900 ${
+                  className={`relative p-6 rounded-3xl border transition-all space-y-4 bg-white dark:bg-slate-900 ${
                     isCorrect
                       ? 'border-emerald-200 dark:border-emerald-950/60'
                       : isUnanswered
@@ -996,6 +1102,19 @@ export const ExamMode: React.FC<ExamModeProps> = ({
                     </div>
 
                     <div className="flex items-center gap-2">
+                      {/* View Scratchpad Button if question had notes */}
+                      {hasScratchpadNotes && (
+                        <button
+                          type="button"
+                          onClick={() => setReviewScratchpadQuestion(q)}
+                          className="px-2.5 py-1 rounded-xl text-xs font-bold border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 hover:bg-purple-100 flex items-center gap-1 transition"
+                          title="Xem lại các trang nháp đã vẽ trong câu này"
+                        >
+                          <BookOpen className="w-3.5 h-3.5" />
+                          <span>Xem nháp ({qAnn.scratchpadPages?.length || 1} trang)</span>
+                        </button>
+                      )}
+
                       <button
                         type="button"
                         onClick={() => setEditingQuestion(q)}
@@ -1030,17 +1149,59 @@ export const ExamMode: React.FC<ExamModeProps> = ({
 
                   {/* Group Content if present */}
                   {q.groupContent && (
-                    <div className="p-4 rounded-2xl bg-purple-500/5 border border-purple-500/20 text-xs text-slate-700 dark:text-slate-300 space-y-1">
+                    <div className="relative p-4 rounded-2xl bg-purple-500/5 border border-purple-500/20 text-xs text-slate-700 dark:text-slate-300 space-y-1">
+                      {qGrpAnn && qGrpAnn.strokes && qGrpAnn.strokes.length > 0 && (
+                        <DrawingOverlay
+                          strokes={qGrpAnn.strokes}
+                          activeTool="pointer"
+                          activeColor="#0f172a"
+                          lineWidth={3}
+                          readOnly={true}
+                          showAnnotations={true}
+                          onAddStroke={() => {}}
+                          onEraseStroke={() => {}}
+                        />
+                      )}
                       <span className="font-bold text-purple-600 dark:text-purple-400">
                         {q.groupTitle || 'Ngữ cảnh / Dữ liệu chung'}:
                       </span>
-                      <MathRenderer content={q.groupContent} />
+                      <AnnotatedText
+                        content={q.groupContent}
+                        target="groupContent"
+                        annotations={qGrpAnn?.textAnnotations || []}
+                        activeTool="pointer"
+                        activeColor="#0f172a"
+                        onAddAnnotation={() => {}}
+                        onRemoveAnnotation={() => {}}
+                        readOnly={true}
+                      />
                     </div>
                   )}
 
-                  {/* Question Text */}
-                  <div className="text-sm font-medium text-slate-900 dark:text-slate-100 leading-relaxed">
-                    <MathRenderer content={q.questionText} />
+                  {/* Question Text with Drawing and Highlights preserved */}
+                  <div className="relative text-sm font-medium text-slate-900 dark:text-slate-100 leading-relaxed">
+                    {qAnn.strokes && qAnn.strokes.length > 0 && (
+                      <DrawingOverlay
+                        strokes={qAnn.strokes}
+                        activeTool="pointer"
+                        activeColor="#0f172a"
+                        lineWidth={3}
+                        readOnly={true}
+                        showAnnotations={true}
+                        onAddStroke={() => {}}
+                        onEraseStroke={() => {}}
+                      />
+                    )}
+                    <AnnotatedText
+                      content={q.questionText}
+                      target="questionText"
+                      annotations={qAnn.textAnnotations || []}
+                      activeTool="pointer"
+                      activeColor="#0f172a"
+                      onAddAnnotation={() => {}}
+                      onRemoveAnnotation={() => {}}
+                      readOnly={true}
+                    />
                   </div>
 
                   {/* Options */}
@@ -1079,7 +1240,16 @@ export const ExamMode: React.FC<ExamModeProps> = ({
                               {label}
                             </span>
                             <div className="flex-1 pt-0.5">
-                              <MathRenderer content={opt} />
+                              <AnnotatedText
+                                content={opt}
+                                target={`option-${optIdx}`}
+                                annotations={qAnn.textAnnotations || []}
+                                activeTool="pointer"
+                                activeColor="#0f172a"
+                                onAddAnnotation={() => {}}
+                                onRemoveAnnotation={() => {}}
+                                readOnly={true}
+                              />
                             </div>
                           </div>
                         );
@@ -1179,6 +1349,24 @@ export const ExamMode: React.FC<ExamModeProps> = ({
             </button>
           )}
         </div>
+
+        {/* Modal / Drawer to review scratchpad of a question */}
+        {reviewScratchpadQuestion && (
+          <ScratchpadDrawer
+            isOpen={true}
+            onClose={() => setReviewScratchpadQuestion(null)}
+            pages={getQuestionAnnotations(session.id, reviewScratchpadQuestion.id).scratchpadPages || []}
+            currentPageIndex={0}
+            currentQuestionNumber={
+              allSessionQuestions.findIndex((x) => x.id === reviewScratchpadQuestion.id) + 1
+            }
+            onChangePage={() => {}}
+            onAddPage={() => {}}
+            onSavePageStrokes={() => {}}
+            onToggleBgPattern={() => {}}
+            readOnly={true}
+          />
+        )}
       </div>
     );
   }
@@ -1186,7 +1374,6 @@ export const ExamMode: React.FC<ExamModeProps> = ({
   // ----------------------------------------------------
   // ACTIVE EXAM SCREEN
   // ----------------------------------------------------
-  const currentQ = questions[currentIndex];
   const isTimeCritical = timeRemainingSeconds < 300; // less than 5 min left
 
   if (!currentQ) {
@@ -1203,7 +1390,7 @@ export const ExamMode: React.FC<ExamModeProps> = ({
   return (
     <div className="min-h-[calc(100vh-4rem)] flex flex-col justify-between max-w-7xl mx-auto px-3 sm:px-6 py-4">
       {/* Sticky Exam Header Bar */}
-      <div className="sticky top-16 z-30 -mx-3 sm:-mx-6 px-3 sm:px-6 py-3 bg-[#060d1f]/80 backdrop-blur-xl border-b border-white/5 flex items-center justify-between gap-3 shadow-xs">
+      <div className="sticky top-16 z-30 -mx-3 sm:-mx-6 px-3 sm:px-6 py-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 shadow-xs">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setIsExitConfirmOpen(true)}
@@ -1214,7 +1401,7 @@ export const ExamMode: React.FC<ExamModeProps> = ({
           </button>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-display text-xs sm:text-sm font-semibold text-white">
+              <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
                 {SUBJECT_CONFIGS[currentSubject].shortName}
               </span>
               {mode === 'full-hsa' && (
@@ -1231,10 +1418,10 @@ export const ExamMode: React.FC<ExamModeProps> = ({
 
         {/* Countdown Timer Display */}
         <div
-          className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl font-mono text-sm sm:text-base font-bold shadow-xs transition ${
+          className={`flex items-center gap-2 px-3.5 py-1.5 rounded-2xl font-mono text-sm sm:text-base font-bold shadow-xs transition ${
             isTimeCritical
               ? 'bg-rose-500 text-white animate-pulse'
-              : 'bg-white/5 text-cyan-400 border border-white/10'
+              : 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700'
           }`}
         >
           <Clock className="w-4 h-4 shrink-0" />
@@ -1265,67 +1452,93 @@ export const ExamMode: React.FC<ExamModeProps> = ({
         </div>
       </div>
 
-      <div className="mt-4">
-        <ExamToolbar
-          activeTool={activeTool}
-          onChangeTool={setActiveTool}
-          activeColor={activeColor}
-          onChangeColor={setActiveColor}
-          strokeWidth={strokeWidth}
-          onChangeStrokeWidth={setStrokeWidth}
-          isRulerOpen={isRulerOpen}
-          onToggleRuler={() => setIsRulerOpen((open) => !open)}
-          onUndo={() => undefined}
-          onRedo={() => undefined}
-          onClear={() => {
-            setActiveTool('pointer');
-            setIsRulerOpen(false);
-          }}
-          canUndo={false}
-          canRedo={false}
-          subject={currentSubject}
-          showAnnotations={showAnnotations}
-          onToggleShowAnnotations={() => setShowAnnotations((visible) => !visible)}
-        />
-      </div>
+      {/* Exam Toolbar (Desktop & Mobile) */}
+      <ExamToolbar
+        activeTool={activeTool}
+        onChangeTool={setActiveTool}
+        activeColor={activeColor}
+        onChangeColor={setActiveColor}
+        strokeWidth={strokeWidth}
+        onChangeStrokeWidth={setStrokeWidth}
+        isRulerOpen={isRulerOpen}
+        onToggleRuler={() => setIsRulerOpen((prev) => !prev)}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
+        onClear={handleClearAll}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        subject={currentSubject}
+        isScratchpadOpen={isScratchpadOpen}
+        onToggleScratchpad={() => setIsScratchpadOpen((prev) => !prev)}
+        showAnnotations={showAnnotations}
+        onToggleShowAnnotations={() => setShowAnnotations((prev) => !prev)}
+        readOnly={false}
+      />
 
       {/* Main Layout: Question (Left/Center) + Palette (Right on desktop) */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-6 my-6 items-start">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-6 my-4 items-start">
         {/* Left Column: Current Question / Grouped view */}
-        <div className="lg:col-span-3">
+        <div className="lg:col-span-3 space-y-4">
           {currentQ.groupContent ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-              {/* Desktop Left / Mobile Top: Shared Passage */}
-              <div className="p-6 rounded-3xl bg-slate-100/70 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 space-y-3 md:sticky md:top-36 md:max-h-[calc(100vh-12rem)] md:overflow-y-auto">
-                <div className="flex items-center justify-between">
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold bg-purple-500/10 text-purple-700 dark:text-purple-300">
-                    <Layers className="w-3.5 h-3.5" />
-                    <span>{currentQ.groupTitle || 'Đoạn trích / Ngữ cảnh chung'}</span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setIsMobileGroupOpen((prev) => !prev)}
-                    className="md:hidden text-xs text-purple-600 font-semibold flex items-center gap-1"
-                  >
-                    {isMobileGroupOpen ? (
-                      <>Thu gọn <ChevronUp className="w-3.5 h-3.5" /></>
-                    ) : (
-                      <>Mở rộng <ChevronDown className="w-3.5 h-3.5" /></>
-                    )}
-                  </button>
-                </div>
-
-                <div className={`${isMobileGroupOpen ? 'block' : 'hidden md:block'} text-sm leading-relaxed text-slate-800 dark:text-slate-200`}>
-                  <MathRenderer content={currentQ.groupContent} />
-                </div>
-              </div>
+              {/* Desktop Left / Mobile Top: Shared Passage with Annotations & Drawing */}
+              <ClusterPassageCard
+                currentQuestion={currentQ}
+                clusterQuestions={clusterQuestions}
+                currentClusterIndex={currentClusterIndex}
+                userAnswers={userAnswers}
+                activeTool={activeTool}
+                activeColor={activeColor}
+                lineWidth={lineWidth}
+                groupTextAnnotations={groupTextAnnotations}
+                groupStrokes={groupStrokes}
+                onAddGroupAnnotation={addGroupAnnotation}
+                onRemoveGroupAnnotation={removeGroupAnnotation}
+                onAddGroupStroke={addGroupStroke}
+                onEraseGroupStroke={eraseGroupStroke}
+                onSelectClusterQuestion={(cIdx) => {
+                  const targetQ = clusterQuestions[cIdx];
+                  if (targetQ) {
+                    const idx = questions.findIndex((q) => q.id === targetQ.id);
+                    if (idx !== -1) setCurrentIndex(idx);
+                  }
+                }}
+                readOnly={false}
+                showAnnotations={showAnnotations}
+                rulerState={rulerState}
+              />
 
               {/* Right Column: Question Content */}
-              <div className="p-6 sm:p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
+              <div
+                ref={questionCardRef}
+                className="relative p-6 sm:p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6 overflow-hidden"
+              >
+                {/* Floating Ruler on Question Card */}
+                <FloatingRuler
+                  isOpen={isRulerOpen}
+                  onClose={() => setIsRulerOpen(false)}
+                  containerRef={questionCardRef}
+                  onRulerStateChange={setRulerState}
+                />
+
+                {/* Drawing Overlay on Question Card */}
+                <DrawingOverlay
+                  questionId={currentQ.id}
+                  strokes={strokes}
+                  activeTool={activeTool}
+                  activeColor={activeColor}
+                  lineWidth={lineWidth}
+                  readOnly={false}
+                  showAnnotations={showAnnotations}
+                  rulerState={rulerState}
+                  onAddStroke={addStroke}
+                  onEraseStroke={eraseStroke}
+                />
+
                 {/* Question Bar */}
-                <div className="flex items-center justify-between gap-2 pb-4 border-b border-slate-100 dark:border-slate-800">
+                <div className="relative z-20 flex items-center justify-between gap-2 pb-4 border-b border-slate-100 dark:border-slate-800">
                   <div className="flex items-center gap-2">
-                    <span className="exam-question-number px-3 py-1 rounded-lg text-sm font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                    <span className="px-3 py-1 rounded-xl text-xs font-extrabold bg-blue-500/10 text-blue-600 dark:text-blue-400">
                       Câu {currentIndex + 1}
                     </span>
                     {currentQ.subTopic && (
@@ -1367,21 +1580,31 @@ export const ExamMode: React.FC<ExamModeProps> = ({
                   </div>
                 </div>
 
-                {/* Question Text */}
-                <div className="text-base sm:text-lg font-medium text-slate-900 dark:text-slate-100 leading-relaxed">
-                  <MathRenderer content={currentQ.questionText} />
+                {/* Question Text with Annotation Support */}
+                <div className="relative z-20 text-base sm:text-lg font-medium text-slate-900 dark:text-slate-100 leading-relaxed select-text">
+                  <AnnotatedText
+                    content={currentQ.questionText}
+                    target="questionText"
+                    annotations={textAnnotations}
+                    activeTool={activeTool}
+                    activeColor={activeColor}
+                    onAddAnnotation={addTextAnnotation}
+                    onRemoveAnnotation={removeTextAnnotation}
+                    readOnly={false}
+                    showAnnotations={showAnnotations}
+                  />
                 </div>
 
                 {/* Optional Image */}
                 {currentQ.imageUrl && (
-                  <div className="max-w-md mx-auto rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800">
+                  <div className="relative z-20 max-w-md mx-auto rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800">
                     <img src={currentQ.imageUrl} alt="Đề thi minh họa" className="w-full h-auto" />
                   </div>
                 )}
 
                 {/* Options */}
                 {currentQ.type === 'multiple-choice' ? (
-                  <div className="space-y-3 pt-2">
+                  <div className="relative z-20 space-y-3 pt-2">
                     {currentQ.options.map((option, optIdx) => {
                       const isSelected = currentAns === optIdx;
                       const label = ['A', 'B', 'C', 'D'][optIdx] || optIdx;
@@ -1391,7 +1614,7 @@ export const ExamMode: React.FC<ExamModeProps> = ({
                           key={optIdx}
                           type="button"
                           onClick={() => handleSelectOption(optIdx)}
-                          className={`exam-option w-full min-h-[52px] p-4 rounded-2xl border text-left flex items-start gap-3.5 transition-all duration-200 cursor-pointer ${
+                          className={`w-full min-h-[52px] p-4 rounded-2xl border-2 text-left flex items-start gap-3.5 transition-all duration-200 cursor-pointer ${
                             isSelected
                               ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/30 text-emerald-950 dark:text-emerald-100 ring-2 ring-emerald-500/20 shadow-xs'
                               : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-900/60 text-slate-800 dark:text-slate-200'
@@ -1406,15 +1629,25 @@ export const ExamMode: React.FC<ExamModeProps> = ({
                           >
                             {label}
                           </span>
-                          <div className="flex-1 pt-0.5 text-sm sm:text-base">
-                            <MathRenderer content={option} />
+                          <div className="flex-1 pt-0.5 text-sm sm:text-base select-text">
+                            <AnnotatedText
+                              content={option}
+                              target={`option-${optIdx}`}
+                              annotations={textAnnotations}
+                              activeTool={activeTool}
+                              activeColor={activeColor}
+                              onAddAnnotation={addTextAnnotation}
+                              onRemoveAnnotation={removeTextAnnotation}
+                              readOnly={false}
+                              showAnnotations={showAnnotations}
+                            />
                           </div>
                         </button>
                       );
                     })}
                   </div>
                 ) : (
-                  <div className="space-y-2 pt-2">
+                  <div className="relative z-20 space-y-2 pt-2">
                     <label className="text-xs font-semibold text-slate-500">
                       Nhập kết quả / câu trả lời của bạn:
                     </label>
@@ -1433,11 +1666,36 @@ export const ExamMode: React.FC<ExamModeProps> = ({
             </div>
           ) : (
             /* Normal Question Card */
-            <div className="p-6 sm:p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
+            <div
+              ref={questionCardRef}
+              className="relative p-6 sm:p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6 overflow-hidden"
+            >
+              {/* Floating Ruler */}
+              <FloatingRuler
+                isOpen={isRulerOpen}
+                onClose={() => setIsRulerOpen(false)}
+                containerRef={questionCardRef}
+                onRulerStateChange={setRulerState}
+              />
+
+              {/* Drawing Overlay */}
+              <DrawingOverlay
+                questionId={currentQ.id}
+                strokes={strokes}
+                activeTool={activeTool}
+                activeColor={activeColor}
+                lineWidth={lineWidth}
+                readOnly={false}
+                showAnnotations={showAnnotations}
+                rulerState={rulerState}
+                onAddStroke={addStroke}
+                onEraseStroke={eraseStroke}
+              />
+
               {/* Question Bar */}
-              <div className="flex items-center justify-between gap-2 pb-4 border-b border-slate-100 dark:border-slate-800">
+              <div className="relative z-20 flex items-center justify-between gap-2 pb-4 border-b border-slate-100 dark:border-slate-800">
                 <div className="flex items-center gap-2">
-                  <span className="exam-question-number px-3 py-1 rounded-lg text-sm font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                  <span className="px-3 py-1 rounded-xl text-xs font-extrabold bg-blue-500/10 text-blue-600 dark:text-blue-400">
                     Câu {currentIndex + 1}
                   </span>
                   {currentQ.subTopic && (
@@ -1479,21 +1737,31 @@ export const ExamMode: React.FC<ExamModeProps> = ({
                 </div>
               </div>
 
-              {/* Question Text */}
-              <div className="text-base sm:text-lg font-medium text-slate-900 dark:text-slate-100 leading-relaxed">
-                <MathRenderer content={currentQ.questionText} />
+              {/* Question Text with Annotation Support */}
+              <div className="relative z-20 text-base sm:text-lg font-medium text-slate-900 dark:text-slate-100 leading-relaxed select-text">
+                <AnnotatedText
+                  content={currentQ.questionText}
+                  target="questionText"
+                  annotations={textAnnotations}
+                  activeTool={activeTool}
+                  activeColor={activeColor}
+                  onAddAnnotation={addTextAnnotation}
+                  onRemoveAnnotation={removeTextAnnotation}
+                  readOnly={false}
+                  showAnnotations={showAnnotations}
+                />
               </div>
 
               {/* Optional Image */}
               {currentQ.imageUrl && (
-                <div className="max-w-md mx-auto rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800">
+                <div className="relative z-20 max-w-md mx-auto rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800">
                   <img src={currentQ.imageUrl} alt="Đề thi minh họa" className="w-full h-auto" />
                 </div>
               )}
 
               {/* Multiple Choice Options */}
               {currentQ.type === 'multiple-choice' ? (
-                <div className="space-y-3 pt-2">
+                <div className="relative z-20 space-y-3 pt-2">
                   {currentQ.options.map((option, optIdx) => {
                     const isSelected = currentAns === optIdx;
                     const label = ['A', 'B', 'C', 'D'][optIdx] || optIdx;
@@ -1503,7 +1771,7 @@ export const ExamMode: React.FC<ExamModeProps> = ({
                         key={optIdx}
                         type="button"
                         onClick={() => handleSelectOption(optIdx)}
-                        className={`exam-option w-full min-h-[52px] p-4 rounded-2xl border text-left flex items-start gap-3.5 transition-all duration-200 cursor-pointer ${
+                        className={`w-full min-h-[52px] p-4 rounded-2xl border-2 text-left flex items-start gap-3.5 transition-all duration-200 cursor-pointer ${
                           isSelected
                             ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/30 text-emerald-950 dark:text-emerald-100 ring-2 ring-emerald-500/20 shadow-xs'
                             : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-900/60 text-slate-800 dark:text-slate-200'
@@ -1518,8 +1786,18 @@ export const ExamMode: React.FC<ExamModeProps> = ({
                         >
                           {label}
                         </span>
-                        <div className="flex-1 pt-0.5 text-sm sm:text-base">
-                          <MathRenderer content={option} />
+                        <div className="flex-1 pt-0.5 text-sm sm:text-base select-text">
+                          <AnnotatedText
+                            content={option}
+                            target={`option-${optIdx}`}
+                            annotations={textAnnotations}
+                            activeTool={activeTool}
+                            activeColor={activeColor}
+                            onAddAnnotation={addTextAnnotation}
+                            onRemoveAnnotation={removeTextAnnotation}
+                            readOnly={false}
+                            showAnnotations={showAnnotations}
+                          />
                         </div>
                       </button>
                     );
@@ -1527,7 +1805,7 @@ export const ExamMode: React.FC<ExamModeProps> = ({
                 </div>
               ) : (
                 /* Fill-in Question */
-                <div className="space-y-2 pt-2">
+                <div className="relative z-20 space-y-2 pt-2">
                   <label className="text-xs font-semibold text-slate-500">
                     Nhập kết quả / câu trả lời của bạn:
                   </label>
@@ -1544,11 +1822,30 @@ export const ExamMode: React.FC<ExamModeProps> = ({
               )}
             </div>
           )}
+
+          {/* Dedicated Scratchpad Drawer (Available for all subjects) */}
+          {isScratchpadOpen && (
+            <ScratchpadDrawer
+              isOpen={isScratchpadOpen}
+              onClose={() => setIsScratchpadOpen(false)}
+              isGlobalMode={isGlobalScratchpadMode}
+              onToggleGlobalMode={() => setIsGlobalScratchpadMode((prev) => !prev)}
+              currentQuestionNumber={currentIndex + 1}
+              pages={scratchpadPages}
+              currentPageIndex={currentScratchpadPage}
+              onChangePage={handleChangeScratchpadPage}
+              onAddPage={handleAddScratchpadPage}
+              onDeletePage={handleDeleteScratchpadPage}
+              onSavePageStrokes={handleSaveScratchpadPageStrokes}
+              onToggleBgPattern={handleToggleBgPattern}
+              readOnly={false}
+            />
+          )}
         </div>
 
-        {/* Right Column: Desktop Palette */}
+        {/* Right Column: Desktop Palette with Cluster & Scratchpad indicators */}
         <div className="hidden lg:block lg:col-span-1 sticky top-36">
-          <div className="glass-card exam-palette p-5 shadow-sm space-y-4">
+          <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
               <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
                 Bảng số câu ({questions.length})
@@ -1573,15 +1870,29 @@ export const ExamMode: React.FC<ExamModeProps> = ({
                 <span className="w-3.5 h-3.5 rounded-lg bg-rose-500" />
                 <span>Đã báo lỗi</span>
               </div>
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-purple-500 ring-2 ring-purple-300" />
+                <span>Có ghi chép / nháp</span>
+              </div>
             </div>
 
-            {/* Grid of rounded number cells */}
+            {/* Grid of rounded number cells with cluster border/tint */}
             <div className="max-h-[380px] overflow-y-auto grid grid-cols-5 gap-2 pr-1">
               {questions.map((q, idx) => {
                 const isAns = userAnswers[q.id] !== undefined;
                 const isCur = currentIndex === idx;
                 const isFlag = flaggedQuestions[q.id];
                 const isReport = !!(reportedQuestions && reportedQuestions[q.id]);
+                const hasScratch = scratchpadStatusMap[q.id];
+                const isCluster = !!q.groupId;
+                const clusterIdx = q.groupId ? uniqueGroupIds.indexOf(q.groupId) : -1;
+                const clusterColorClass =
+                  clusterIdx >= 0 ? [
+                    'border-purple-300 dark:border-purple-700 bg-purple-500/5',
+                    'border-cyan-300 dark:border-cyan-700 bg-cyan-500/5',
+                    'border-amber-300 dark:border-amber-700 bg-amber-500/5',
+                    'border-emerald-300 dark:border-emerald-700 bg-emerald-500/5',
+                  ][clusterIdx % 4] : '';
 
                 return (
                   <button
@@ -1595,6 +1906,8 @@ export const ExamMode: React.FC<ExamModeProps> = ({
                         ? 'border-2 border-rose-500 text-rose-600 dark:text-rose-400 bg-rose-50/50 dark:bg-rose-950/20'
                         : isAns
                         ? 'bg-emerald-500 text-white font-extrabold shadow-xs'
+                        : isCluster
+                        ? `border-2 ${clusterColorClass} text-slate-800 dark:text-slate-200`
                         : 'border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
                     }`}
                   >
@@ -1605,6 +1918,12 @@ export const ExamMode: React.FC<ExamModeProps> = ({
                     {isReport && (
                       <span className="absolute top-1 left-1 w-2 h-2 rounded-full bg-rose-500 shadow-xs" />
                     )}
+                    {hasScratch && (
+                      <span
+                        className="absolute bottom-1 right-1 w-1.5 h-1.5 rounded-full bg-purple-500 ring-1 ring-white"
+                        title="Có bản nháp"
+                      />
+                    )}
                   </button>
                 );
               })}
@@ -1613,31 +1932,66 @@ export const ExamMode: React.FC<ExamModeProps> = ({
         </div>
       </div>
 
-      {/* Sticky Bottom Navigation Controls */}
-      <div className="sticky bottom-4 z-20 flex items-center justify-between gap-3 p-3 rounded-2xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/80 shadow-lg">
-        <button
-          type="button"
-          disabled={currentIndex === 0}
-          onClick={() => setCurrentIndex((prev) => Math.max(0, prev - 1))}
-          className="flex-1 sm:flex-none flex items-center justify-center gap-2 min-h-[44px] px-5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none text-xs sm:text-sm font-semibold transition"
-        >
-          <ChevronLeft className="w-4 h-4" />
-          <span>Câu trước</span>
-        </button>
+      {/* Sticky Bottom Navigation Controls with Cluster Navigation */}
+      <div className="sticky bottom-4 z-20 flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/80 shadow-lg">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={currentIndex === 0}
+            onClick={() => setCurrentIndex((prev) => Math.max(0, prev - 1))}
+            className="flex items-center justify-center gap-2 min-h-[44px] px-5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none text-xs sm:text-sm font-semibold transition"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            <span>Câu trước</span>
+          </button>
+
+          {/* Previous in Cluster */}
+          {currentQ?.groupId && currentClusterIndex > 0 && (
+            <button
+              type="button"
+              onClick={handlePrevInCluster}
+              className="hidden sm:flex items-center justify-center gap-1.5 min-h-[44px] px-3.5 rounded-xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300 hover:bg-purple-100 text-xs font-bold transition"
+              title="Đến câu trước trong cụm"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              <span>Trước trong cụm</span>
+            </button>
+          )}
+        </div>
 
         <span className="text-xs font-bold text-slate-500 lg:hidden">
           Câu {currentIndex + 1} / {questions.length}
+          {currentQ?.groupId && (
+            <span className="text-purple-600 ml-1">
+              ({currentClusterIndex + 1}/{clusterQuestions.length} cụm)
+            </span>
+          )}
         </span>
 
-        <button
-          type="button"
-          disabled={currentIndex === questions.length - 1}
-          onClick={() => setCurrentIndex((prev) => Math.min(questions.length - 1, prev + 1))}
-          className="flex-1 sm:flex-none flex items-center justify-center gap-2 min-h-[44px] px-6 rounded-xl bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-30 disabled:pointer-events-none text-xs sm:text-sm font-semibold shadow-xs transition"
-        >
-          <span>Câu sau</span>
-          <ChevronRight className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Next in Cluster */}
+          {currentQ?.groupId && currentClusterIndex < clusterQuestions.length - 1 && (
+            <button
+              type="button"
+              onClick={handleNextInCluster}
+              className="hidden sm:flex items-center justify-center gap-1.5 min-h-[44px] px-3.5 rounded-xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300 hover:bg-purple-100 text-xs font-bold transition"
+              title="Đến câu tiếp trong cụm"
+            >
+              <span>Tiếp trong cụm</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+
+          <button
+            type="button"
+            disabled={currentIndex === questions.length - 1}
+            onClick={() => setCurrentIndex((prev) => Math.min(questions.length - 1, prev + 1))}
+            className="flex items-center justify-center gap-2 min-h-[44px] px-6 rounded-xl bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-30 disabled:pointer-events-none text-xs sm:text-sm font-semibold shadow-xs transition"
+          >
+            <span>Câu sau</span>
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Mobile Slide-Over Drawer for Palette */}

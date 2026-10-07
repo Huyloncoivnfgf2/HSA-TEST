@@ -1,11 +1,11 @@
-import React, { useRef, useEffect, useMemo, useCallback } from 'react';
+import React, { useRef, useMemo, useCallback } from 'react';
 import { TextAnnotation, ActiveToolType } from '../types/hsa';
 import { MathRenderer } from './MathRenderer';
 import { expandSelectionToKaTeXBoundaries } from '../services/annotationService';
 
 interface AnnotatedTextProps {
   content: string;
-  target: string;
+  target: string; // 'questionText' | 'groupContent' | 'option-0' etc.
   annotations: TextAnnotation[];
   activeTool: ActiveToolType;
   activeColor: string;
@@ -15,153 +15,6 @@ interface AnnotatedTextProps {
   readOnly?: boolean;
   showAnnotations?: boolean;
 }
-
-// Canvas overlay để vẽ highlight/gạch chân mà không động vào DOM
-const AnnotationCanvas: React.FC<{
-  containerRef: React.RefObject<HTMLDivElement | null>;
-  annotations: TextAnnotation[];
-  activeTool: ActiveToolType;
-  show: boolean;
-}> = ({ containerRef, annotations, activeTool, show }) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  const redraw = useCallback(() => {
-    const canvas = canvasRef.current;
-    const container = containerRef.current;
-    if (!canvas || !container || !show) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const dpr = window.devicePixelRatio || 1;
-    const rect = container.getBoundingClientRect();
-    const w = rect.width;
-    const h = rect.height;
-
-    canvas.width = Math.round(w * dpr);
-    canvas.height = Math.round(h * dpr);
-    canvas.style.width = `${w}px`;
-    canvas.style.height = `${h}px`;
-    ctx.scale(dpr, dpr);
-    ctx.clearRect(0, 0, w, h);
-
-    if (annotations.length === 0) return;
-
-    // Lấy tất cả text nodes trong container, bỏ qua vùng KaTeX
-    const walker = document.createTreeWalker(
-      container,
-      NodeFilter.SHOW_TEXT,
-      {
-        acceptNode: (node) => {
-          // Bỏ qua text nodes bên trong KaTeX
-          let parent = node.parentElement;
-          while (parent && parent !== container) {
-            if (
-              parent.classList.contains('katex') ||
-              parent.classList.contains('katex-html') ||
-              parent.classList.contains('katex-mathml')
-            ) {
-              return NodeFilter.FILTER_REJECT;
-            }
-            parent = parent.parentElement;
-          }
-          return NodeFilter.FILTER_ACCEPT;
-        },
-      }
-    );
-
-    // Build danh sách text nodes với offset tích luỹ
-    const textNodes: { node: Text; start: number; end: number }[] = [];
-    let offset = 0;
-    let node: Text | null;
-    while ((node = walker.nextNode() as Text | null)) {
-      const len = node.textContent?.length || 0;
-      textNodes.push({ node, start: offset, end: offset + len });
-      offset += len;
-    }
-
-    const containerRect = container.getBoundingClientRect();
-
-    annotations.forEach((ann) => {
-      const color = ann.color || '#fef08a';
-      const isHighlight = ann.type === 'highlight';
-      const isUnderline = ann.type === 'underline';
-
-      // Tìm range từ startIndex/endIndex
-      let startNode: Text | null = null;
-      let startOffset = 0;
-      let endNode: Text | null = null;
-      let endOffset = 0;
-
-      for (const tn of textNodes) {
-        if (startNode === null && ann.startIndex >= tn.start && ann.startIndex <= tn.end) {
-          startNode = tn.node;
-          startOffset = ann.startIndex - tn.start;
-        }
-        if (ann.endIndex >= tn.start && ann.endIndex <= tn.end) {
-          endNode = tn.node;
-          endOffset = ann.endIndex - tn.start;
-        }
-      }
-
-      if (!startNode || !endNode) return;
-
-      try {
-        const range = document.createRange();
-        range.setStart(startNode, Math.min(startOffset, startNode.length));
-        range.setEnd(endNode, Math.min(endOffset, endNode.length));
-
-        const rects = Array.from(range.getClientRects());
-        rects.forEach((r) => {
-          const x = r.left - containerRect.left;
-          const y = r.top - containerRect.top;
-          const rw = r.width;
-          const rh = r.height;
-
-          if (isHighlight) {
-            // Parse màu và set alpha
-            ctx.save();
-            ctx.globalAlpha = 0.35;
-            ctx.fillStyle = color;
-            ctx.fillRect(x, y, rw, rh);
-            ctx.restore();
-          } else if (isUnderline) {
-            ctx.save();
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(x, y + rh - 1);
-            ctx.lineTo(x + rw, y + rh - 1);
-            ctx.stroke();
-            ctx.restore();
-          }
-        });
-      } catch {
-        // Bỏ qua nếu range lỗi (DOM thay đổi)
-      }
-    });
-  }, [annotations, containerRef, show]);
-
-  useEffect(() => {
-    redraw();
-  }, [redraw]);
-
-  useEffect(() => {
-    const observer = new ResizeObserver(() => redraw());
-    if (containerRef.current) observer.observe(containerRef.current);
-    return () => observer.disconnect();
-  }, [containerRef, redraw]);
-
-  if (!show) return null;
-
-  return (
-    <canvas
-      ref={canvasRef}
-      className="absolute inset-0 pointer-events-none z-10"
-      style={{ left: 0, top: 0 }}
-    />
-  );
-};
 
 export const AnnotatedText: React.FC<AnnotatedTextProps> = ({
   content,
@@ -177,11 +30,13 @@ export const AnnotatedText: React.FC<AnnotatedTextProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Filter annotations for this target
   const targetAnnotations = useMemo(() => {
     if (!showAnnotations) return [];
     return annotations.filter((a) => a.target === target);
   }, [annotations, target, showAnnotations]);
 
+  // Handle text selection when tool is highlight or underline
   const handleMouseUp = useCallback(() => {
     if (readOnly) return;
     if (activeTool !== 'highlight' && activeTool !== 'underline') return;
@@ -193,6 +48,7 @@ export const AnnotatedText: React.FC<AnnotatedTextProps> = ({
     const container = containerRef.current;
     if (!container || !container.contains(range.commonAncestorContainer)) return;
 
+    // Calculate start and end offset within textContent of container
     const preSelectionRange = range.cloneRange();
     preSelectionRange.selectNodeContents(container);
     preSelectionRange.setEnd(range.startContainer, range.startOffset);
@@ -202,6 +58,7 @@ export const AnnotatedText: React.FC<AnnotatedTextProps> = ({
 
     if (selectedLength <= 0) return;
 
+    // Expand to KaTeX boundaries if needed
     const expanded = expandSelectionToKaTeXBoundaries(content, startIndex, endIndex);
 
     onAddAnnotation({
@@ -212,51 +69,147 @@ export const AnnotatedText: React.FC<AnnotatedTextProps> = ({
       color: activeColor,
     });
 
+    // Clear selection after applying
     selection.removeAllRanges();
   }, [readOnly, activeTool, activeColor, content, target, onAddAnnotation]);
 
-  // Eraser: click vào annotation để xoá
-  const handleClick = useCallback(() => {
-    if (readOnly || activeTool !== 'eraser') return;
-    const selection = window.getSelection();
-    if (!selection || !selection.rangeCount) return;
+  // If there are no annotations, render directly with MathRenderer
+  if (targetAnnotations.length === 0) {
+    return (
+      <div
+        ref={containerRef}
+        onMouseUp={handleMouseUp}
+        onTouchEnd={handleMouseUp}
+        className={`relative ${activeTool === 'highlight' || activeTool === 'underline' ? 'select-text cursor-text' : ''} ${className}`}
+      >
+        <MathRenderer content={content} />
+      </div>
+    );
+  }
 
-    const range = selection.getRangeAt(0);
-    const container = containerRef.current;
-    if (!container || !container.contains(range.commonAncestorContainer)) return;
+  // Segment the text by annotation boundaries
+  // Collect cut points
+  const cutPoints = new Set<number>([0, content.length]);
+  targetAnnotations.forEach((a) => {
+    const s = Math.max(0, Math.min(content.length, a.startIndex));
+    const e = Math.max(0, Math.min(content.length, a.endIndex));
+    cutPoints.add(s);
+    cutPoints.add(e);
+  });
 
-    const preRange = range.cloneRange();
-    preRange.selectNodeContents(container);
-    preRange.setEnd(range.startContainer, range.startOffset);
-    const clickIndex = preRange.toString().length;
+  const sortedCuts = Array.from(cutPoints).sort((a, b) => a - b);
+  const segments: {
+    start: number;
+    end: number;
+    text: string;
+    highlights: TextAnnotation[];
+    underlines: TextAnnotation[];
+  }[] = [];
 
-    // Xoá annotation bao phủ vị trí click
-    targetAnnotations
-      .filter((a) => a.startIndex <= clickIndex && a.endIndex >= clickIndex)
-      .forEach((a) => onRemoveAnnotation(a.id));
-  }, [readOnly, activeTool, targetAnnotations, onRemoveAnnotation]);
+  for (let i = 0; i < sortedCuts.length - 1; i++) {
+    const s = sortedCuts[i];
+    const e = sortedCuts[i + 1];
+    if (s >= e) continue;
 
-  const isInteractive = (activeTool === 'highlight' || activeTool === 'underline') && !readOnly;
-  const isEraser = activeTool === 'eraser' && !readOnly && targetAnnotations.length > 0;
+    const segmentText = content.slice(s, e);
+    const matchingHighlights = targetAnnotations.filter(
+      (a) => a.type === 'highlight' && a.startIndex <= s && a.endIndex >= e
+    );
+    const matchingUnderlines = targetAnnotations.filter(
+      (a) => a.type === 'underline' && a.startIndex <= s && a.endIndex >= e
+    );
+
+    segments.push({
+      start: s,
+      end: e,
+      text: segmentText,
+      highlights: matchingHighlights,
+      underlines: matchingUnderlines,
+    });
+  }
 
   return (
     <div
       ref={containerRef}
       onMouseUp={handleMouseUp}
       onTouchEnd={handleMouseUp}
-      onClick={handleClick}
-      className={`relative ${isInteractive ? 'select-text cursor-text' : ''} ${isEraser ? 'cursor-pointer' : ''} ${className}`}
+      className={`relative ${activeTool === 'highlight' || activeTool === 'underline' ? 'select-text cursor-text' : ''} ${className}`}
     >
-      {/* Nội dung gốc — KHÔNG bao giờ bị wrap hay tách */}
-      <MathRenderer content={content} />
+      {segments.map((seg, idx) => {
+        const hasHighlight = seg.highlights.length > 0;
+        const hasUnderline = seg.underlines.length > 0;
+        const highlightColor = hasHighlight ? seg.highlights[0].color : '';
+        const underlineColor = hasUnderline ? seg.underlines[0].color : '';
 
-      {/* Canvas overlay vẽ highlight/gạch chân, không chạm DOM */}
-      <AnnotationCanvas
-        containerRef={containerRef}
-        annotations={targetAnnotations}
-        activeTool={activeTool}
-        show={showAnnotations}
-      />
+        let highlightStyle = '';
+        if (hasHighlight) {
+          switch (highlightColor) {
+            case '#fef08a': // yellow
+              highlightStyle = 'bg-yellow-200/70 dark:bg-yellow-500/30 rounded-xs px-0.5';
+              break;
+            case '#bbf7d0': // green
+              highlightStyle = 'bg-emerald-200/70 dark:bg-emerald-500/30 rounded-xs px-0.5';
+              break;
+            case '#bfdbfe': // blue
+              highlightStyle = 'bg-blue-200/70 dark:bg-blue-500/30 rounded-xs px-0.5';
+              break;
+            case '#fecdd3': // rose/pink
+              highlightStyle = 'bg-rose-200/70 dark:bg-rose-500/30 rounded-xs px-0.5';
+              break;
+            case '#fed7aa': // orange
+              highlightStyle = 'bg-orange-200/70 dark:bg-orange-500/30 rounded-xs px-0.5';
+              break;
+            case '#e9d5ff': // purple
+              highlightStyle = 'bg-purple-200/70 dark:bg-purple-500/30 rounded-xs px-0.5';
+              break;
+            default:
+              highlightStyle = 'bg-yellow-200/70 dark:bg-yellow-500/30 rounded-xs px-0.5';
+          }
+        }
+
+        let underlineStyle = '';
+        if (hasUnderline) {
+          switch (underlineColor) {
+            case '#ef4444':
+              underlineStyle = 'border-b-2 border-rose-500';
+              break;
+            case '#3b82f6':
+              underlineStyle = 'border-b-2 border-blue-500';
+              break;
+            case '#10b981':
+              underlineStyle = 'border-b-2 border-emerald-500';
+              break;
+            case '#f97316':
+              underlineStyle = 'border-b-2 border-orange-500';
+              break;
+            case '#a855f7':
+              underlineStyle = 'border-b-2 border-purple-500';
+              break;
+            case '#0f172a':
+            default:
+              underlineStyle = 'border-b-2 border-slate-900 dark:border-slate-100';
+          }
+        }
+
+        const isEraserTarget = activeTool === 'eraser' && (hasHighlight || hasUnderline);
+
+        return (
+          <span
+            key={idx}
+            onClick={(e) => {
+              if (isEraserTarget && !readOnly) {
+                e.stopPropagation();
+                seg.highlights.forEach((h) => onRemoveAnnotation(h.id));
+                seg.underlines.forEach((u) => onRemoveAnnotation(u.id));
+              }
+            }}
+            className={`inline ${highlightStyle} ${underlineStyle} ${isEraserTarget ? 'cursor-pointer hover:opacity-50 ring-1 ring-rose-400' : ''}`}
+            title={isEraserTarget ? 'Bấm để xoá đánh dấu này' : undefined}
+          >
+            <MathRenderer content={seg.text} />
+          </span>
+        );
+      })}
     </div>
   );
 };

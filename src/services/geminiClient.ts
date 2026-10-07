@@ -1,4 +1,5 @@
 import { Question, SubjectType } from '../types/hsa';
+import { postProcessQuestion } from './textPostProcessor';
 
 export interface FileData {
   name: string;
@@ -130,45 +131,8 @@ async function callParseEndpoint(payload: {
     throw new Error('Không thể trích xuất câu hỏi từ tài liệu');
   }
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  const questions: Question[] = [];
-  let pending = '';
-  let finished = false;
-
-  const processBlock = (block: string) => {
-    const data = block
-      .split('\n')
-      .filter((line) => line.startsWith('data:'))
-      .map((line) => line.slice(5).trim())
-      .join('\n');
-    if (!data) return;
-    const event = JSON.parse(data);
-    if (event.error && event.chunk === undefined) {
-      throw new Error(event.error);
-    }
-    if (Array.isArray(event.questions)) questions.push(...event.questions);
-    if (event.error) {
-      onProgress?.({
-        stage: 'error',
-        message: `Lỗi chunk ${event.chunk}/${event.total}: ${event.error}`,
-      });
-    }
-    if (event.done) finished = true;
-  };
-
-  while (true) {
-    const { done, value } = await reader.read();
-    pending += decoder.decode(value, { stream: !done }).replace(/\r\n/g, '\n');
-    const blocks = pending.split('\n\n');
-    pending = blocks.pop() || '';
-    blocks.forEach(processBlock);
-    if (done) break;
-  }
-  if (pending.trim()) processBlock(pending);
-  if (!finished) throw new Error('Luồng xử lý câu hỏi kết thúc bất thường.');
-
-  return questions;
+  const questions = Array.isArray(data.questions) ? data.questions : [];
+  return questions.map((q: Question) => postProcessQuestion(q));
 }
 
 /**

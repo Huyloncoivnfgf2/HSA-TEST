@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Question,
   SubjectType,
@@ -9,6 +9,14 @@ import {
 import { updateMistakeRecord, incrementDailyActivity } from '../services/analyticsService';
 import { MathRenderer } from './MathRenderer';
 import { QuestionEditModal } from './QuestionEditModal';
+import { ExamToolbar } from './ExamToolbar';
+import { AnnotatedText } from './AnnotatedText';
+import { DrawingOverlay } from './DrawingOverlay';
+import { FloatingRuler } from './FloatingRuler';
+import { ScratchpadDrawer } from './ScratchpadDrawer';
+import { ClusterPassageCard } from './ClusterPassageCard';
+import { useQuestionAnnotations } from '../hooks/useQuestionAnnotations';
+import { ensureClusterQuestionsConsecutive } from '../services/annotationService';
 import {
   ArrowLeft,
   ChevronLeft,
@@ -54,9 +62,14 @@ export const StudyMode: React.FC<StudyModeProps> = ({
   onUpdateQuestion,
 }) => {
   const [currentSubject, setCurrentSubject] = useState<SubjectType>(initialSubject);
-  const subjectQuestions = customQuestions && customQuestions.length > 0
+  const rawSubjectQuestions = customQuestions && customQuestions.length > 0
     ? customQuestions
     : questions.filter((q) => q.subject === currentSubject);
+
+  const subjectQuestions = React.useMemo(
+    () => ensureClusterQuestionsConsecutive(rawSubjectQuestions),
+    [rawSubjectQuestions]
+  );
 
   // Restore last index from progress or start at 0
   const savedIndex = progress.lastQuestionIndex[currentSubject] || 0;
@@ -71,6 +84,93 @@ export const StudyMode: React.FC<StudyModeProps> = ({
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
 
   const currentQuestion: Question | undefined = subjectQuestions[currentIndex];
+  const questionCardRef = useRef<HTMLDivElement>(null);
+
+  // Question Annotations & Scratchpad
+  const {
+    activeTool,
+    setActiveTool,
+    activeColor,
+    setActiveColor,
+    strokeWidth,
+    setStrokeWidth,
+    lineWidth,
+    isRulerOpen,
+    setIsRulerOpen,
+    rulerState,
+    setRulerState,
+    showAnnotations,
+    setShowAnnotations,
+    isScratchpadOpen,
+    setIsScratchpadOpen,
+    textAnnotations,
+    strokes,
+    addTextAnnotation,
+    removeTextAnnotation,
+    addStroke,
+    eraseStroke,
+    handleUndo,
+    handleRedo,
+    handleClearAll,
+    canUndo,
+    canRedo,
+    groupTextAnnotations,
+    groupStrokes,
+    addGroupAnnotation,
+    removeGroupAnnotation,
+    addGroupStroke,
+    eraseGroupStroke,
+    isGlobalScratchpadMode,
+    setIsGlobalScratchpadMode,
+    scratchpadPages,
+    currentScratchpadPage,
+    handleAddScratchpadPage,
+    handleChangeScratchpadPage,
+    handleDeleteScratchpadPage,
+    handleSaveScratchpadPageStrokes,
+    handleToggleBgPattern,
+    scratchpadStatusMap,
+  } = useQuestionAnnotations({
+    contextId: 'study_' + currentSubject,
+    currentQuestionId: currentQuestion?.id,
+    groupId: currentQuestion?.groupId,
+    fullQuestionText: currentQuestion?.questionText,
+  });
+
+  // Cluster calculations
+  const uniqueGroupIds = React.useMemo(() => {
+    const ids: string[] = [];
+    subjectQuestions.forEach((q) => {
+      if (q.groupId && !ids.includes(q.groupId)) ids.push(q.groupId);
+    });
+    return ids;
+  }, [subjectQuestions]);
+
+  const clusterQuestions = React.useMemo(() => {
+    if (!currentQuestion?.groupId) return [];
+    return subjectQuestions.filter((q) => q.groupId === currentQuestion.groupId);
+  }, [subjectQuestions, currentQuestion?.groupId]);
+
+  const currentClusterIndex = React.useMemo(() => {
+    if (!currentQuestion?.groupId) return 0;
+    return clusterQuestions.findIndex((q) => q.id === currentQuestion.id);
+  }, [clusterQuestions, currentQuestion?.id]);
+
+  const handlePrevInCluster = () => {
+    if (currentClusterIndex > 0) {
+      const prevQ = clusterQuestions[currentClusterIndex - 1];
+      const targetIdx = subjectQuestions.findIndex((q) => q.id === prevQ.id);
+      if (targetIdx !== -1) setCurrentIndex(targetIdx);
+    }
+  };
+
+  const handleNextInCluster = () => {
+    if (currentClusterIndex < clusterQuestions.length - 1) {
+      const nextQ = clusterQuestions[currentClusterIndex + 1];
+      const targetIdx = subjectQuestions.findIndex((q) => q.id === nextQ.id);
+      if (targetIdx !== -1) setCurrentIndex(targetIdx);
+    }
+  };
 
   useEffect(() => {
     // When subject changes, set index
@@ -295,39 +395,91 @@ export const StudyMode: React.FC<StudyModeProps> = ({
         </div>
       </div>
 
-      {/* Main Question Card */}
-      <div className="my-6">
+      {/* Exam Toolbar */}
+      <div className="mt-4">
+        <ExamToolbar
+          activeTool={activeTool}
+          onChangeTool={setActiveTool}
+          activeColor={activeColor}
+          onChangeColor={setActiveColor}
+          strokeWidth={strokeWidth}
+          onChangeStrokeWidth={setStrokeWidth}
+          isRulerOpen={isRulerOpen}
+          onToggleRuler={() => setIsRulerOpen((prev) => !prev)}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
+          onClear={handleClearAll}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          subject={currentSubject}
+          isScratchpadOpen={isScratchpadOpen}
+          onToggleScratchpad={() => setIsScratchpadOpen((prev) => !prev)}
+          showAnnotations={showAnnotations}
+          onToggleShowAnnotations={() => setShowAnnotations((prev) => !prev)}
+          readOnly={false}
+        />
+      </div>
+
+      {/* Main Question Card Area */}
+      <div className="my-4">
         {currentQuestion.groupContent ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
             {/* Desktop Left Column / Mobile Top Accordion: Shared Passage */}
-            <div className="p-6 rounded-3xl bg-slate-100/70 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 space-y-3 md:sticky md:top-24 md:max-h-[calc(100vh-10rem)] md:overflow-y-auto">
-              <div className="flex items-center justify-between">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold bg-purple-500/10 text-purple-700 dark:text-purple-300">
-                  <Layers className="w-3.5 h-3.5" />
-                  <span>{currentQuestion.groupTitle || 'Đoạn trích / Dữ liệu chung'}</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setIsMobileGroupOpen((prev) => !prev)}
-                  className="md:hidden text-xs text-purple-600 font-semibold flex items-center gap-1"
-                >
-                  {isMobileGroupOpen ? (
-                    <>Thu gọn <ChevronUp className="w-3.5 h-3.5" /></>
-                  ) : (
-                    <>Mở rộng <ChevronDown className="w-3.5 h-3.5" /></>
-                  )}
-                </button>
-              </div>
-
-              <div className={`${isMobileGroupOpen ? 'block' : 'hidden md:block'} text-sm leading-relaxed text-slate-800 dark:text-slate-200`}>
-                <MathRenderer content={currentQuestion.groupContent} />
-              </div>
-            </div>
+            <ClusterPassageCard
+              currentQuestion={currentQuestion}
+              clusterQuestions={clusterQuestions}
+              currentClusterIndex={currentClusterIndex}
+              userAnswers={selectedAnswers}
+              activeTool={activeTool}
+              activeColor={activeColor}
+              lineWidth={lineWidth}
+              groupTextAnnotations={groupTextAnnotations}
+              groupStrokes={groupStrokes}
+              onAddGroupAnnotation={addGroupAnnotation}
+              onRemoveGroupAnnotation={removeGroupAnnotation}
+              onAddGroupStroke={addGroupStroke}
+              onEraseGroupStroke={eraseGroupStroke}
+              onSelectClusterQuestion={(cIdx) => {
+                const targetQ = clusterQuestions[cIdx];
+                if (targetQ) {
+                  const idx = subjectQuestions.findIndex((q) => q.id === targetQ.id);
+                  if (idx !== -1) setCurrentIndex(idx);
+                }
+              }}
+              readOnly={false}
+              showAnnotations={showAnnotations}
+              rulerState={rulerState}
+            />
 
             {/* Right Column: Question Content */}
-            <div className="p-6 sm:p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
+            <div
+              ref={questionCardRef}
+              className="relative p-6 sm:p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6 overflow-hidden"
+            >
+              {/* Floating Ruler */}
+              <FloatingRuler
+                isOpen={isRulerOpen}
+                onClose={() => setIsRulerOpen(false)}
+                containerRef={questionCardRef}
+                onRulerStateChange={setRulerState}
+              />
+
+              {/* Drawing Overlay */}
+              <DrawingOverlay
+                questionId={currentQuestion?.id}
+                strokes={strokes}
+                activeTool={activeTool}
+                activeColor={activeColor}
+                lineWidth={lineWidth}
+                readOnly={false}
+                showAnnotations={showAnnotations}
+                rulerState={rulerState}
+                onAddStroke={addStroke}
+                onEraseStroke={eraseStroke}
+              />
+
               {/* Header of question */}
-              <div className="flex items-center justify-between gap-2">
+              <div className="relative z-20 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <span className="px-3 py-1 rounded-xl text-xs font-extrabold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
                     Câu {currentIndex + 1}
@@ -341,21 +493,31 @@ export const StudyMode: React.FC<StudyModeProps> = ({
                 <span className="text-xs text-slate-400">Chế độ Ôn tập</span>
               </div>
 
-              {/* Question Text with KaTeX */}
-              <div className="text-base sm:text-lg font-medium text-slate-900 dark:text-slate-100 leading-relaxed">
-                <MathRenderer content={currentQuestion.questionText} />
+              {/* Question Text with KaTeX & Annotations */}
+              <div className="relative z-20 text-base sm:text-lg font-medium text-slate-900 dark:text-slate-100 leading-relaxed select-text">
+                <AnnotatedText
+                  content={currentQuestion.questionText}
+                  target="questionText"
+                  annotations={textAnnotations}
+                  activeTool={activeTool}
+                  activeColor={activeColor}
+                  onAddAnnotation={addTextAnnotation}
+                  onRemoveAnnotation={removeTextAnnotation}
+                  readOnly={false}
+                  showAnnotations={showAnnotations}
+                />
               </div>
 
               {/* Optional Image */}
               {currentQuestion.imageUrl && (
-                <div className="max-w-md mx-auto rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800">
+                <div className="relative z-20 max-w-md mx-auto rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800">
                   <img src={currentQuestion.imageUrl} alt="Hình minh họa" className="w-full h-auto" />
                 </div>
               )}
 
               {/* Options */}
               {currentQuestion.type === 'multiple-choice' ? (
-                <div className="space-y-3 pt-2">
+                <div className="relative z-20 space-y-3 pt-2">
                   {currentQuestion.options.map((option, optIdx) => {
                     const label = ['A', 'B', 'C', 'D'][optIdx] || optIdx;
                     const isSelected = currentAnswer === optIdx;
@@ -402,15 +564,25 @@ export const StudyMode: React.FC<StudyModeProps> = ({
                             label
                           )}
                         </span>
-                        <div className="flex-1 pt-0.5 text-sm sm:text-base">
-                          <MathRenderer content={option} />
+                        <div className="flex-1 pt-0.5 text-sm sm:text-base select-text">
+                          <AnnotatedText
+                            content={option}
+                            target={`option-${optIdx}`}
+                            annotations={textAnnotations}
+                            activeTool={activeTool}
+                            activeColor={activeColor}
+                            onAddAnnotation={addTextAnnotation}
+                            onRemoveAnnotation={removeTextAnnotation}
+                            readOnly={false}
+                            showAnnotations={showAnnotations}
+                          />
                         </div>
                       </button>
                     );
                   })}
                 </div>
               ) : (
-                <div className="space-y-3 pt-2">
+                <div className="relative z-20 space-y-3 pt-2">
                   <label className="text-xs font-semibold text-slate-500">
                     Nhập câu trả lời / số kết quả:
                   </label>
@@ -437,7 +609,7 @@ export const StudyMode: React.FC<StudyModeProps> = ({
 
               {/* Explanation Section */}
               {hasAnswered && (
-                <div className="p-5 sm:p-6 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-800 space-y-3 animate-in fade-in duration-300">
+                <div className="relative z-20 p-5 sm:p-6 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-800 space-y-3 animate-in fade-in duration-300">
                   <div className="flex items-center gap-2">
                     <div className="p-1 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
                       <Sparkles className="w-4 h-4" />
@@ -465,9 +637,34 @@ export const StudyMode: React.FC<StudyModeProps> = ({
           </div>
         ) : (
           /* Normal Single Question Card */
-          <div className="p-6 sm:p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
+          <div
+            ref={questionCardRef}
+            className="relative p-6 sm:p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6 overflow-hidden"
+          >
+            {/* Floating Ruler */}
+            <FloatingRuler
+              isOpen={isRulerOpen}
+              onClose={() => setIsRulerOpen(false)}
+              containerRef={questionCardRef}
+              onRulerStateChange={setRulerState}
+            />
+
+            {/* Drawing Overlay */}
+            <DrawingOverlay
+              questionId={currentQuestion?.id}
+              strokes={strokes}
+              activeTool={activeTool}
+              activeColor={activeColor}
+              lineWidth={lineWidth}
+              readOnly={false}
+              showAnnotations={showAnnotations}
+              rulerState={rulerState}
+              onAddStroke={addStroke}
+              onEraseStroke={eraseStroke}
+            />
+
             {/* Header of question */}
-            <div className="flex items-center justify-between gap-2">
+            <div className="relative z-20 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <span className="px-3 py-1 rounded-xl text-xs font-extrabold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
                   Câu {currentIndex + 1}
@@ -481,21 +678,31 @@ export const StudyMode: React.FC<StudyModeProps> = ({
               <span className="text-xs text-slate-400">Chế độ Ôn tập</span>
             </div>
 
-            {/* Question Text with KaTeX */}
-            <div className="text-base sm:text-lg font-medium text-slate-900 dark:text-slate-100 leading-relaxed">
-              <MathRenderer content={currentQuestion.questionText} />
+            {/* Question Text with KaTeX & Annotations */}
+            <div className="relative z-20 text-base sm:text-lg font-medium text-slate-900 dark:text-slate-100 leading-relaxed select-text">
+              <AnnotatedText
+                content={currentQuestion.questionText}
+                target="questionText"
+                annotations={textAnnotations}
+                activeTool={activeTool}
+                activeColor={activeColor}
+                onAddAnnotation={addTextAnnotation}
+                onRemoveAnnotation={removeTextAnnotation}
+                readOnly={false}
+                showAnnotations={showAnnotations}
+              />
             </div>
 
             {/* Optional Image */}
             {currentQuestion.imageUrl && (
-              <div className="max-w-md mx-auto rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800">
+              <div className="relative z-20 max-w-md mx-auto rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800">
                 <img src={currentQuestion.imageUrl} alt="Hình minh họa" className="w-full h-auto" />
               </div>
             )}
 
             {/* Options */}
             {currentQuestion.type === 'multiple-choice' ? (
-              <div className="space-y-3 pt-2">
+              <div className="relative z-20 space-y-3 pt-2">
                 {currentQuestion.options.map((option, optIdx) => {
                   const label = ['A', 'B', 'C', 'D'][optIdx] || optIdx;
                   const isSelected = currentAnswer === optIdx;
@@ -542,15 +749,25 @@ export const StudyMode: React.FC<StudyModeProps> = ({
                           label
                         )}
                       </span>
-                      <div className="flex-1 pt-0.5 text-sm sm:text-base">
-                        <MathRenderer content={option} />
+                      <div className="flex-1 pt-0.5 text-sm sm:text-base select-text">
+                        <AnnotatedText
+                          content={option}
+                          target={`option-${optIdx}`}
+                          annotations={textAnnotations}
+                          activeTool={activeTool}
+                          activeColor={activeColor}
+                          onAddAnnotation={addTextAnnotation}
+                          onRemoveAnnotation={removeTextAnnotation}
+                          readOnly={false}
+                          showAnnotations={showAnnotations}
+                        />
                       </div>
                     </button>
                   );
                 })}
               </div>
             ) : (
-              <div className="space-y-3 pt-2">
+              <div className="relative z-20 space-y-3 pt-2">
                 <label className="text-xs font-semibold text-slate-500">
                   Nhập câu trả lời / số kết quả:
                 </label>
@@ -577,7 +794,7 @@ export const StudyMode: React.FC<StudyModeProps> = ({
 
             {/* Explanation Section */}
             {hasAnswered && (
-              <div className="p-5 sm:p-6 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-800 space-y-3 animate-in fade-in duration-300">
+              <div className="relative z-20 p-5 sm:p-6 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-800 space-y-3 animate-in fade-in duration-300">
                 <div className="flex items-center gap-2">
                   <div className="p-1 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
                     <Sparkles className="w-4 h-4" />
@@ -603,19 +820,53 @@ export const StudyMode: React.FC<StudyModeProps> = ({
             )}
           </div>
         )}
+
+        {/* Dedicated Scratchpad Drawer (Available for all subjects) */}
+        {isScratchpadOpen && (
+          <ScratchpadDrawer
+            isOpen={isScratchpadOpen}
+            onClose={() => setIsScratchpadOpen(false)}
+            isGlobalMode={isGlobalScratchpadMode}
+            onToggleGlobalMode={() => setIsGlobalScratchpadMode((prev) => !prev)}
+            currentQuestionNumber={currentIndex + 1}
+            pages={scratchpadPages}
+            currentPageIndex={currentScratchpadPage}
+            onChangePage={handleChangeScratchpadPage}
+            onAddPage={handleAddScratchpadPage}
+            onDeletePage={handleDeleteScratchpadPage}
+            onSavePageStrokes={handleSaveScratchpadPageStrokes}
+            onToggleBgPattern={handleToggleBgPattern}
+            readOnly={false}
+          />
+        )}
       </div>
 
       {/* Bottom Navigation Buttons */}
-      <div className="sticky bottom-4 z-20 flex items-center justify-between gap-3 p-3 rounded-2xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/80 shadow-lg">
-        <button
-          type="button"
-          disabled={currentIndex === 0}
-          onClick={() => setCurrentIndex((prev) => Math.max(0, prev - 1))}
-          className="flex-1 sm:flex-none flex items-center justify-center gap-2 min-h-[44px] px-5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none text-xs sm:text-sm font-semibold transition"
-        >
-          <ChevronLeft className="w-4 h-4" />
-          <span>Câu trước</span>
-        </button>
+      <div className="sticky bottom-4 z-20 flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/80 shadow-lg">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={currentIndex === 0}
+            onClick={() => setCurrentIndex((prev) => Math.max(0, prev - 1))}
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 min-h-[44px] px-5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none text-xs sm:text-sm font-semibold transition"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            <span>Câu trước</span>
+          </button>
+
+          {/* Previous in Cluster */}
+          {currentQuestion?.groupId && currentClusterIndex > 0 && (
+            <button
+              type="button"
+              onClick={handlePrevInCluster}
+              className="hidden sm:flex items-center justify-center gap-1.5 min-h-[44px] px-3.5 rounded-xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300 hover:bg-purple-100 text-xs font-bold transition"
+              title="Đến câu trước trong cụm"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              <span>Trước trong cụm</span>
+            </button>
+          )}
+        </div>
 
         <button
           type="button"
@@ -623,17 +874,37 @@ export const StudyMode: React.FC<StudyModeProps> = ({
           className="sm:hidden p-2 text-xs font-bold text-slate-600 dark:text-slate-300"
         >
           {currentIndex + 1}/{subjectQuestions.length}
+          {currentQuestion?.groupId && (
+            <span className="text-purple-600 ml-1">
+              ({currentClusterIndex + 1}/{clusterQuestions.length} cụm)
+            </span>
+          )}
         </button>
 
-        <button
-          type="button"
-          disabled={currentIndex === subjectQuestions.length - 1}
-          onClick={() => setCurrentIndex((prev) => Math.min(subjectQuestions.length - 1, prev + 1))}
-          className="flex-1 sm:flex-none flex items-center justify-center gap-2 min-h-[44px] px-6 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-30 disabled:pointer-events-none text-xs sm:text-sm font-semibold shadow-xs transition"
-        >
-          <span>Câu sau</span>
-          <ChevronRight className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Next in Cluster */}
+          {currentQuestion?.groupId && currentClusterIndex < clusterQuestions.length - 1 && (
+            <button
+              type="button"
+              onClick={handleNextInCluster}
+              className="hidden sm:flex items-center justify-center gap-1.5 min-h-[44px] px-3.5 rounded-xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300 hover:bg-purple-100 text-xs font-bold transition"
+              title="Đến câu tiếp trong cụm"
+            >
+              <span>Tiếp trong cụm</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+
+          <button
+            type="button"
+            disabled={currentIndex === subjectQuestions.length - 1}
+            onClick={() => setCurrentIndex((prev) => Math.min(subjectQuestions.length - 1, prev + 1))}
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 min-h-[44px] px-6 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-30 disabled:pointer-events-none text-xs sm:text-sm font-semibold shadow-xs transition"
+          >
+            <span>Câu sau</span>
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Question Selector Palette (Modal) */}
