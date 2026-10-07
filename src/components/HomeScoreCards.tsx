@@ -36,20 +36,20 @@ export const HomeScoreCards: React.FC<HomeScoreCardsProps> = ({
     math: {
       title: 'ĐIỂM ĐỊNH LƯỢNG CỦA BẠN',
       short: 'Toán học',
-      color: 'text-blue-600 dark:text-blue-400',
-      bg: 'bg-blue-500',
+      color: 'text-cyan-400',
+      bg: 'bg-cyan-400',
     },
     literature: {
       title: 'ĐIỂM ĐỊNH TÍNH CỦA BẠN',
       short: 'Ngữ văn',
-      color: 'text-amber-600 dark:text-amber-400',
-      bg: 'bg-amber-500',
+      color: 'text-violet-400',
+      bg: 'bg-violet-400',
     },
     science: {
       title: 'ĐIỂM KHOA HỌC CỦA BẠN',
       short: 'Khoa học',
-      color: 'text-emerald-600 dark:text-emerald-400',
-      bg: 'bg-emerald-500',
+      color: 'text-emerald-400',
+      bg: 'bg-emerald-400',
     },
   };
 
@@ -180,7 +180,13 @@ export const HomeScoreCards: React.FC<HomeScoreCardsProps> = ({
             <div
               key={subj}
               onClick={() => onSelectSubjectAnalytics(subj)}
-              className="group relative p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500 dark:hover:border-emerald-500 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col justify-between"
+              className={`glass-card group relative p-6 border-l-4 ${
+                subj === 'math'
+                  ? 'border-l-cyan-400'
+                  : subj === 'literature'
+                  ? 'border-l-violet-500'
+                  : 'border-l-emerald-400'
+              } hover:glow-cyan hover:-translate-y-1 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col justify-between`}
             >
               {/* Top Card Label */}
               <div>
@@ -208,7 +214,7 @@ export const HomeScoreCards: React.FC<HomeScoreCardsProps> = ({
                 {/* Score Big Display */}
                 <div className="my-4 flex items-baseline justify-between">
                   <div>
-                    <div className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-slate-100">
+                    <div className="font-display text-4xl font-bold text-white">
                       {latest !== null ? (
                         <>
                           {latest}

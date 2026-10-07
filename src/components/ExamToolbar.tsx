@@ -161,7 +161,7 @@ export const ExamToolbar: React.FC<ExamToolbarProps> = ({
       {/* ============================================================== */}
       {/* DESKTOP TOOLBAR (Horizontal pill bar neatly placed above question) */}
       {/* ============================================================== */}
-      <div className="flex flex-wrap items-center justify-between gap-3 p-2 px-3 rounded-2xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200/90 dark:border-slate-800/90 shadow-md mb-4 select-none">
+      <div className="glass-card flex flex-wrap items-center justify-between gap-3 p-2 px-3 backdrop-blur-xl shadow-md mb-4 select-none">
         {/* Left: Tools Group */}
         <div className="flex items-center gap-1">
           {/* Con trỏ (Pointer) */}

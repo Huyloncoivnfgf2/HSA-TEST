@@ -399,7 +399,7 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="relative w-full max-w-5xl max-h-[92vh] flex flex-col bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+      <div className="glass-card glow-violet relative w-full max-w-5xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
           <div className="flex items-center gap-3">
@@ -451,7 +451,7 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
                   onClick={() => setActiveTab('import')}
                   className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-semibold transition ${
                     activeTab === 'import'
-                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs'
+                      ? 'bg-violet-500/20 border border-violet-500/40 text-violet-300 shadow-xs'
                       : 'text-slate-600 dark:text-slate-400'
                   }`}
                 >
@@ -463,7 +463,7 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
                   onClick={() => setActiveTab('json')}
                   className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-semibold transition ${
                     activeTab === 'json'
-                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs'
+                      ? 'bg-violet-500/20 border border-violet-500/40 text-violet-300 shadow-xs'
                       : 'text-slate-600 dark:text-slate-400'
                   }`}
                 >
@@ -537,7 +537,7 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
 
                     <div
                       onClick={() => fileInputRef.current?.click()}
-                      className="border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-500 rounded-2xl p-6 flex flex-col items-center justify-center text-center cursor-pointer bg-slate-50/50 dark:bg-slate-800/20 transition group"
+                      className="border-2 border-dashed border-white/10 hover:border-cyan-500/40 rounded-2xl p-6 flex flex-col items-center justify-center text-center cursor-pointer bg-white/[0.02] hover:bg-white/5 transition group"
                     >
                       <input
                         ref={fileInputRef}

@@ -655,7 +655,7 @@ export const ExamMode: React.FC<ExamModeProps> = ({
     return (
       <div className="max-w-4xl mx-auto px-4 py-8 space-y-8 animate-in fade-in duration-300">
         {/* Banner summary */}
-        <div className="p-8 sm:p-10 rounded-3xl bg-gradient-to-tr from-emerald-600 via-teal-700 to-slate-900 text-white shadow-xl text-center space-y-6 relative overflow-hidden">
+        <div className="glass-card p-8 sm:p-10 text-white shadow-xl text-center space-y-6 relative overflow-hidden">
           <div className="w-16 h-16 mx-auto rounded-3xl bg-white/20 backdrop-blur-md flex items-center justify-center">
             <Trophy className="w-8 h-8 text-amber-300" />
           </div>
@@ -664,7 +664,7 @@ export const ExamMode: React.FC<ExamModeProps> = ({
             <span className="px-3.5 py-1 rounded-full text-xs font-bold bg-white/10 uppercase tracking-wider">
               {mode === 'full-hsa' ? 'Kết quả bài thi chuẩn HSA ĐHQGHN' : 'Kết quả kiểm tra môn'}
             </span>
-            <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight">
+            <h1 className="font-display text-7xl font-bold tracking-tight gradient-text">
               {calculatedScore}{' '}
               <span className="text-2xl font-normal text-emerald-200">/ {totalMaxScore} điểm</span>
             </h1>
@@ -1195,7 +1195,7 @@ export const ExamMode: React.FC<ExamModeProps> = ({
   return (
     <div className="min-h-[calc(100vh-4rem)] flex flex-col justify-between max-w-7xl mx-auto px-3 sm:px-6 py-4">
       {/* Sticky Exam Header Bar */}
-      <div className="sticky top-16 z-30 -mx-3 sm:-mx-6 px-3 sm:px-6 py-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 shadow-xs">
+      <div className="sticky top-16 z-30 -mx-3 sm:-mx-6 px-3 sm:px-6 py-3 bg-[#060d1f]/80 backdrop-blur-xl border-b border-white/5 flex items-center justify-between gap-3 shadow-xs">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setIsExitConfirmOpen(true)}
@@ -1206,7 +1206,7 @@ export const ExamMode: React.FC<ExamModeProps> = ({
           </button>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
+              <span className="font-display text-xs sm:text-sm font-semibold text-white">
                 {SUBJECT_CONFIGS[currentSubject].shortName}
               </span>
               {mode === 'full-hsa' && (
@@ -1223,10 +1223,10 @@ export const ExamMode: React.FC<ExamModeProps> = ({
 
         {/* Countdown Timer Display */}
         <div
-          className={`flex items-center gap-2 px-3.5 py-1.5 rounded-2xl font-mono text-sm sm:text-base font-bold shadow-xs transition ${
+          className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl font-mono text-sm sm:text-base font-bold shadow-xs transition ${
             isTimeCritical
               ? 'bg-rose-500 text-white animate-pulse'
-              : 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700'
+              : 'bg-white/5 text-cyan-400 border border-white/10'
           }`}
         >
           <Clock className="w-4 h-4 shrink-0" />
@@ -1293,7 +1293,7 @@ export const ExamMode: React.FC<ExamModeProps> = ({
                 {/* Question Bar */}
                 <div className="flex items-center justify-between gap-2 pb-4 border-b border-slate-100 dark:border-slate-800">
                   <div className="flex items-center gap-2">
-                    <span className="px-3 py-1 rounded-xl text-xs font-extrabold bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                    <span className="exam-question-number px-3 py-1 rounded-lg text-sm font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
                       Câu {currentIndex + 1}
                     </span>
                     {currentQ.subTopic && (
@@ -1359,7 +1359,7 @@ export const ExamMode: React.FC<ExamModeProps> = ({
                           key={optIdx}
                           type="button"
                           onClick={() => handleSelectOption(optIdx)}
-                          className={`w-full min-h-[52px] p-4 rounded-2xl border-2 text-left flex items-start gap-3.5 transition-all duration-200 cursor-pointer ${
+                          className={`exam-option w-full min-h-[52px] p-4 rounded-2xl border text-left flex items-start gap-3.5 transition-all duration-200 cursor-pointer ${
                             isSelected
                               ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/30 text-emerald-950 dark:text-emerald-100 ring-2 ring-emerald-500/20 shadow-xs'
                               : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-900/60 text-slate-800 dark:text-slate-200'
@@ -1405,7 +1405,7 @@ export const ExamMode: React.FC<ExamModeProps> = ({
               {/* Question Bar */}
               <div className="flex items-center justify-between gap-2 pb-4 border-b border-slate-100 dark:border-slate-800">
                 <div className="flex items-center gap-2">
-                  <span className="px-3 py-1 rounded-xl text-xs font-extrabold bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                  <span className="exam-question-number px-3 py-1 rounded-lg text-sm font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
                     Câu {currentIndex + 1}
                   </span>
                   {currentQ.subTopic && (
@@ -1471,7 +1471,7 @@ export const ExamMode: React.FC<ExamModeProps> = ({
                         key={optIdx}
                         type="button"
                         onClick={() => handleSelectOption(optIdx)}
-                        className={`w-full min-h-[52px] p-4 rounded-2xl border-2 text-left flex items-start gap-3.5 transition-all duration-200 cursor-pointer ${
+                        className={`exam-option w-full min-h-[52px] p-4 rounded-2xl border text-left flex items-start gap-3.5 transition-all duration-200 cursor-pointer ${
                           isSelected
                             ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/30 text-emerald-950 dark:text-emerald-100 ring-2 ring-emerald-500/20 shadow-xs'
                             : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-900/60 text-slate-800 dark:text-slate-200'
@@ -1516,7 +1516,7 @@ export const ExamMode: React.FC<ExamModeProps> = ({
 
         {/* Right Column: Desktop Palette */}
         <div className="hidden lg:block lg:col-span-1 sticky top-36">
-          <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+          <div className="glass-card exam-palette p-5 shadow-sm space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
               <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
                 Bảng số câu ({questions.length})

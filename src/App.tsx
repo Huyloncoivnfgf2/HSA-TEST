@@ -561,21 +561,21 @@ export default function App() {
             )}
 
             {/* Hero Section */}
-            <div className="relative rounded-3xl bg-gradient-to-br from-slate-900 via-emerald-950 to-slate-900 text-white p-8 sm:p-12 overflow-hidden shadow-2xl border border-emerald-900/40">
-              <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
-              <div className="absolute bottom-0 left-1/3 w-80 h-80 bg-teal-500/10 rounded-full blur-3xl pointer-events-none" />
+            <div className="glass-card relative rounded-3xl text-white p-8 sm:p-12 overflow-hidden shadow-2xl border border-white/10">
+              <div className="absolute top-0 right-0 w-96 h-96 bg-cyan-400/20 rounded-full blur-3xl opacity-20 pointer-events-none" />
+              <div className="absolute bottom-0 left-1/3 w-80 h-80 bg-violet-600/20 rounded-full blur-3xl opacity-20 pointer-events-none" />
 
               <div className="relative z-10 max-w-3xl space-y-5">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
                   <Sparkles className="w-3.5 h-3.5" />
                   <span>Kỳ thi Đánh giá năng lực HSA • ĐHQGHN</span>
                 </div>
 
-                <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight leading-tight">
-                  Luyện Thi HSA Chuẩn Cấu Trúc ĐHQGHN
+                <h1 className="font-display text-4xl md:text-6xl font-bold tracking-tight leading-tight">
+                  Luyện Thi <span className="gradient-text">HSA</span> Chuẩn Cấu Trúc ĐHQGHN
                 </h1>
 
-                <p className="text-sm sm:text-base text-slate-300 max-w-2xl leading-relaxed">
+                <p className="text-lg text-[#8892aa] max-w-xl leading-relaxed">
                   Hệ thống ôn tập và thi thử trực tuyến toàn diện: Tư duy định lượng (Toán), Tư duy
                   định tính (Ngữ văn), và Khoa học. Tích hợp AI bóc tách đề từ PDF/Ảnh, hiển thị công
                   thức KaTeX, câu hỏi cụm đoạn trích và phân tích tiến độ thông minh.
@@ -586,7 +586,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => startExam('full-hsa')}
-                    className="flex items-center gap-2.5 py-3.5 px-6 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-sm shadow-lg shadow-emerald-500/25 transition cursor-pointer hover:scale-102"
+                    className="flex items-center gap-2.5 py-3.5 px-6 rounded-xl bg-[#00e5ff] hover:bg-cyan-300 text-[#060d1f] font-semibold text-sm shadow-lg shadow-cyan-500/25 transition cursor-pointer hover:scale-102"
                   >
                     <Play className="w-4 h-4 fill-slate-950" />
                     <span>Thi thử toàn bộ (Toán → Văn → Khoa học)</span>
@@ -595,9 +595,9 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setIsImportModalOpen(true)}
-                    className="flex items-center gap-2 py-3.5 px-5 rounded-2xl bg-white/10 hover:bg-white/15 text-white font-bold text-sm backdrop-blur-xs border border-white/10 transition cursor-pointer"
+                    className="flex items-center gap-2 py-3.5 px-5 rounded-xl bg-transparent hover:bg-white/5 text-white font-semibold text-sm backdrop-blur-xs border border-white/15 transition cursor-pointer"
                   >
-                    <Sparkles className="w-4 h-4 text-emerald-300" />
+                    <Sparkles className="w-4 h-4 text-cyan-300" />
                     <span>Tải file đề thi (AI tách câu hỏi)</span>
                   </button>
                 </div>
