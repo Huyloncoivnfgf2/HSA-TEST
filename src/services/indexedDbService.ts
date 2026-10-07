@@ -2,9 +2,10 @@ import { Question, ExamSession, ExamSet, QuestionEditHistory } from '../types/hs
 import { ExamRecord } from '../types/analytics';
 import { FSRSCardData, normalizeCard } from './fsrsService';
 import { INITIAL_QUESTIONS } from '../data/sampleQuestions';
+import { encodeStrokesDelta, decodeStrokesDelta } from './annotationService';
 
 const DB_NAME = 'HSA_MASTER_DB_V4';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -39,6 +40,12 @@ function getDb(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains('question_edits')) {
         db.createObjectStore('question_edits', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('question_annotations')) {
+        db.createObjectStore('question_annotations', { keyPath: 'key' });
+      }
+      if (!db.objectStoreNames.contains('group_annotations')) {
+        db.createObjectStore('group_annotations', { keyPath: 'key' });
       }
     };
 
@@ -349,3 +356,115 @@ export async function addQuestionEditRecord(edit: QuestionEditHistory): Promise<
   const updated = [edit, ...current];
   await saveQuestionEditsIDB(updated);
 }
+
+// ==================== ANNOTATIONS & SCRATCHPAD ====================
+export async function saveQuestionAnnotationIDB(data: any): Promise<void> {
+  try {
+    const db = await getDb();
+    const tx = db.transaction('question_annotations', 'readwrite');
+    const store = tx.objectStore('question_annotations');
+
+    // Nén delta cho mảng điểm vẽ trước khi lưu vào IndexedDB
+    const payloadToSave = {
+      ...data,
+      strokes: encodeStrokesDelta(data.strokes || []),
+      scratchpadPages: Array.isArray(data.scratchpadPages)
+        ? data.scratchpadPages.map((p: any) => ({
+            ...p,
+            strokes: encodeStrokesDelta(p.strokes || []),
+          }))
+        : data.scratchpadPages,
+      _isDeltaEncoded: true,
+    };
+
+    store.put(payloadToSave);
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (err) {
+    console.warn('Failed to save question annotation to IDB:', err);
+  }
+}
+
+export async function loadQuestionAnnotationIDB(key: string): Promise<any | null> {
+  try {
+    const db = await getDb();
+    const tx = db.transaction('question_annotations', 'readonly');
+    const store = tx.objectStore('question_annotations');
+    const req = store.get(key);
+    const result = await new Promise<any | null>((resolve, reject) => {
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+
+    if (!result) return null;
+
+    // Giải nén delta về toạ độ tuyệt đối nếu được nén delta
+    if (result._isDeltaEncoded) {
+      return {
+        ...result,
+        strokes: decodeStrokesDelta(result.strokes || []),
+        scratchpadPages: Array.isArray(result.scratchpadPages)
+          ? result.scratchpadPages.map((p: any) => ({
+              ...p,
+              strokes: decodeStrokesDelta(p.strokes || []),
+            }))
+          : result.scratchpadPages,
+      };
+    }
+
+    return result;
+  } catch (err) {
+    return null;
+  }
+}
+
+export async function saveGroupAnnotationIDB(data: any): Promise<void> {
+  try {
+    const db = await getDb();
+    const tx = db.transaction('group_annotations', 'readwrite');
+    const store = tx.objectStore('group_annotations');
+
+    const payloadToSave = {
+      ...data,
+      strokes: encodeStrokesDelta(data.strokes || []),
+      _isDeltaEncoded: true,
+    };
+
+    store.put(payloadToSave);
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (err) {
+    console.warn('Failed to save group annotation to IDB:', err);
+  }
+}
+
+export async function loadGroupAnnotationIDB(key: string): Promise<any | null> {
+  try {
+    const db = await getDb();
+    const tx = db.transaction('group_annotations', 'readonly');
+    const store = tx.objectStore('group_annotations');
+    const req = store.get(key);
+    const result = await new Promise<any | null>((resolve, reject) => {
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+
+    if (!result) return null;
+
+    if (result._isDeltaEncoded) {
+      return {
+        ...result,
+        strokes: decodeStrokesDelta(result.strokes || []),
+      };
+    }
+
+    return result;
+  } catch (err) {
+    return null;
+  }
+}
+

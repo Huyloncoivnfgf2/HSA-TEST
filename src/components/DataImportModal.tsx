@@ -41,6 +41,8 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { exportQuestionsToJson, validateQuestionsJson } from '../services/storageService';
+import { exportAllAnnotationsBackup, importAnnotationsBackup } from '../services/annotationService';
+import { postProcessQuestion } from '../services/textPostProcessor';
 
 interface DataImportModalProps {
   isOpen: boolean;
@@ -79,6 +81,10 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
   const [answerKeyText, setAnswerKeyText] = useState<string>('');
   const [isMatchingKey, setIsMatchingKey] = useState<boolean>(false);
   const [matchReport, setMatchReport] = useState<string | null>(null);
+
+  // Annotations & Scratchpad backup options
+  const [includeAnnotationsInBackup, setIncludeAnnotationsInBackup] = useState<boolean>(true);
+  const [annotationsRestoredMessage, setAnnotationsRestoredMessage] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const answerKeyFileRef = useRef<HTMLInputElement>(null);
@@ -177,8 +183,9 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
         throw new Error('AI không tìm thấy câu hỏi hợp lệ trong nội dung được cung cấp.');
       }
 
-      // Mark duplicate candidates
-      const checkedQuestions = extracted.map((q) => {
+      // Post-process text and mark duplicate candidates
+      const postProcessed = extracted.map((q) => postProcessQuestion(q));
+      const checkedQuestions = postProcessed.map((q) => {
         const dup = isDuplicateOfExisting(q.questionText);
         if (dup) {
           return {
@@ -399,7 +406,7 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="glass-card glow-violet relative w-full max-w-5xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+      <div className="relative w-full max-w-5xl max-h-[92vh] flex flex-col bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
           <div className="flex items-center gap-3">
@@ -451,7 +458,7 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
                   onClick={() => setActiveTab('import')}
                   className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-semibold transition ${
                     activeTab === 'import'
-                      ? 'bg-violet-500/20 border border-violet-500/40 text-violet-300 shadow-xs'
+                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs'
                       : 'text-slate-600 dark:text-slate-400'
                   }`}
                 >
@@ -463,7 +470,7 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
                   onClick={() => setActiveTab('json')}
                   className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-semibold transition ${
                     activeTab === 'json'
-                      ? 'bg-violet-500/20 border border-violet-500/40 text-violet-300 shadow-xs'
+                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs'
                       : 'text-slate-600 dark:text-slate-400'
                   }`}
                 >
@@ -537,7 +544,7 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
 
                     <div
                       onClick={() => fileInputRef.current?.click()}
-                      className="border-2 border-dashed border-white/10 hover:border-cyan-500/40 rounded-2xl p-6 flex flex-col items-center justify-center text-center cursor-pointer bg-white/[0.02] hover:bg-white/5 transition group"
+                      className="border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-500 rounded-2xl p-6 flex flex-col items-center justify-center text-center cursor-pointer bg-slate-50/50 dark:bg-slate-800/20 transition group"
                     >
                       <input
                         ref={fileInputRef}
@@ -653,6 +660,13 @@ Câu 17: ..."
               ) : (
                 /* JSON Backup tab */
                 <div className="space-y-6">
+                  {annotationsRestoredMessage && (
+                    <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-xs font-semibold text-emerald-800 dark:text-emerald-200 flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>{annotationsRestoredMessage}</span>
+                    </div>
+                  )}
+
                   <div className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 space-y-4">
                     <h3 className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                       <Download className="w-5 h-5 text-emerald-600" />
@@ -662,10 +676,52 @@ Câu 17: ..."
                       Tải về tệp JSON chứa toàn bộ {currentQuestions.length} câu hỏi hiện có trong
                       ngân hàng để lưu trữ offline.
                     </p>
+
+                    {/* Option to include annotations and scratchpads or skip for smaller file */}
+                    <div className="p-3 rounded-xl bg-purple-50/60 dark:bg-purple-950/20 border border-purple-200/80 dark:border-purple-900/40">
+                      <label className="flex items-start gap-2.5 text-xs text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={includeAnnotationsInBackup}
+                          onChange={(e) => setIncludeAnnotationsInBackup(e.target.checked)}
+                          className="mt-0.5 rounded text-purple-600 focus:ring-purple-500 w-4 h-4"
+                        />
+                        <div>
+                          <span className="font-bold text-purple-900 dark:text-purple-200 block">
+                            Bao gồm cả đánh dấu (highlight, gạch chân) và các trang nháp từng câu
+                          </span>
+                          <span className="text-[11px] text-slate-500">
+                            Bỏ chọn nếu bạn chỉ muốn xuất câu hỏi thuần tuý để tệp JSON nhẹ nhất.
+                          </span>
+                        </div>
+                      </label>
+                    </div>
+
                     <button
                       type="button"
-                      onClick={() => exportQuestionsToJson(currentQuestions)}
-                      className="inline-flex items-center gap-2 py-2.5 px-5 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-semibold text-sm"
+                      onClick={() => {
+                        if (includeAnnotationsInBackup) {
+                          const backupPayload = {
+                            version: '2.0-hsa-backup',
+                            exportedAt: new Date().toISOString(),
+                            questions: currentQuestions,
+                            annotations: exportAllAnnotationsBackup(),
+                          };
+                          const jsonStr = JSON.stringify(backupPayload, null, 2);
+                          const blob = new Blob([jsonStr], { type: 'application/json' });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `de-thi-hsa-backup-kem-nhap-${new Date().toISOString().slice(0, 10)}.json`;
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                          URL.revokeObjectURL(url);
+                        } else {
+                          exportQuestionsToJson(currentQuestions);
+                        }
+                      }}
+                      className="inline-flex items-center gap-2 py-2.5 px-5 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-semibold text-sm hover:opacity-90 transition"
                     >
                       <Download className="w-4 h-4" />
                       Tải về tệp JSON (.json)
@@ -678,7 +734,7 @@ Câu 17: ..."
                       Nhập đề thi từ tệp JSON sao lưu
                     </h3>
                     <p className="text-sm text-slate-600 dark:text-slate-400">
-                      Tải lên tệp JSON đã sao lưu từ trước để xem lại hoặc nạp vào ngân hàng.
+                      Tải lên tệp JSON đã sao lưu từ trước để xem lại hoặc nạp vào ngân hàng (hỗ trợ cả tệp sao lưu kèm ghi chú/nháp).
                     </p>
                     <input
                       ref={jsonInputRef}
@@ -691,10 +747,24 @@ Câu 17: ..."
                           reader.onload = (ev) => {
                             try {
                               const json = JSON.parse(ev.target?.result as string);
+                              let questionsArray = json;
+
+                              if (json && typeof json === 'object' && !Array.isArray(json)) {
+                                if (Array.isArray(json.questions)) {
+                                  questionsArray = json.questions;
+                                }
+                                if (json.annotations) {
+                                  importAnnotationsBackup(json.annotations);
+                                  setAnnotationsRestoredMessage(
+                                    'Đã khôi phục thành công các ghi chú highlight, gạch chân và trang nháp đi kèm tệp sao lưu!'
+                                  );
+                                }
+                              }
+
                               // Validation Logic
-                              const validated = validateQuestionsWithRules(json);
+                              const validated = validateQuestionsWithRules(questionsArray);
                               if (validated) {
-                                setPreviewQuestions(validated);
+                                setPreviewQuestions(validated.map((q) => postProcessQuestion(q)));
                               } else {
                                 setErrorMessage('Tệp JSON không đúng cấu trúc đề thi HSA.');
                               }
@@ -709,7 +779,7 @@ Câu 17: ..."
                     <button
                       type="button"
                       onClick={() => jsonInputRef.current?.click()}
-                      className="inline-flex items-center gap-2 py-2.5 px-5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm"
+                      className="inline-flex items-center gap-2 py-2.5 px-5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm transition"
                     >
                       <FileText className="w-4 h-4" />
                       Chọn tệp JSON để nhập

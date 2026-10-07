@@ -113,7 +113,7 @@ export function processFSRSReview(
 ): FSRSCardData {
   const normalized = normalizeCard(cardData.card);
   const schedulingCards = fsrsScheduler.repeat(normalized, reviewDate);
-  const updatedItem = (schedulingCards as Record<number, any>)[rating];
+  const updatedItem = (schedulingCards as unknown as Record<number, any>)[rating];
 
   return {
     ...cardData,

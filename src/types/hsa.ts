@@ -4,32 +4,73 @@ export type ScienceSubSubject = 'Vật lí' | 'Hóa học' | 'Sinh học' | 'L�
 
 export type DifficultyLevel = 'dễ' | 'trung bình' | 'khó';
 
-export type AnnotationType = 'highlight' | 'underline' | 'freehand';
+export type QuestionReportReason =
+  | 'sai đáp án'
+  | 'đề thiếu/sai nội dung'
+  | 'công thức hỏng'
+  | 'hình lỗi'
+  | 'khác';
 
-export interface Annotation {
+export type ActiveToolType =
+  | 'pointer'
+  | 'pen'
+  | 'highlight'
+  | 'underline'
+  | 'eraser'
+  | 'ruler';
+
+export type StrokeWidthType = 'thin' | 'medium' | 'thick';
+
+export interface TextAnnotation {
   id: string;
-  type: AnnotationType;
-  questionId: string;
+  target: 'questionText' | 'groupContent' | string; // e.g. 'option-0', 'option-1'
+  type: 'highlight' | 'underline';
+  startIndex: number;
+  endIndex: number;
   color: string;
-  // For text annotations (highlight/underline)
-  startIndex?: number; // character index
-  endIndex?: number; // character index
-  textContent?: string; // verify context
-  // For freehand annotations
-  points?: { x: number; y: number }[];
-  lineWidth?: number;
+  createdAt: number;
 }
 
-export interface ScratchpadPage {
+export interface DrawingPoint {
+  x: number; // 0..1 normalized
+  y: number; // 0..1 normalized
+}
+
+export interface DrawingStroke {
   id: string;
-  strokes: { points: { x: number; y: number }[]; color: string; lineWidth: number }[];
+  color: string;
+  lineWidth: number; // absolute px in reference
+  points: DrawingPoint[];
+  createdAt: number;
 }
 
-export interface QuestionAnnotations {
+export interface ScratchpadPageData {
+  id: string;
+  pageNumber: number;
+  strokes: DrawingStroke[];
+  bgPattern?: 'blank' | 'grid' | 'ruled'; // plain, grid/ô li, or ruled/kẻ ngang
+}
+
+export interface QuestionAnnotationsData {
+  key: string; // `${contextId}_${questionId}`
+  contextId: string; // examId or studySessionId
   questionId: string;
-  annotations: Annotation[];
-  scratchpadPages: ScratchpadPage[];
-  currentPageIndex: number;
+  groupId?: string; // if belongs to group
+  textAnnotations: TextAnnotation[];
+  strokes: DrawingStroke[]; // strokes drawn over question
+  scratchpadPages?: ScratchpadPageData[]; // pages of scratchpad (max 10)
+  currentScratchpadPage?: number;
+  updatedAt: number;
+}
+
+// Group passage shared annotations
+export interface GroupPassageAnnotationsData {
+  key: string; // `${contextId}_group_${groupId}`
+  contextId: string;
+  groupId: string;
+  textAnnotations: TextAnnotation[];
+  strokes: DrawingStroke[];
+  updatedAt: number;
 }
 
 export interface QuestionEditHistory {

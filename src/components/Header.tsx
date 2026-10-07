@@ -50,22 +50,22 @@ export const Header: React.FC<HeaderProps> = ({
   fsrsDueCount = 0,
 }) => {
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-white/5 bg-[#060d1f]/80 backdrop-blur-xl transition-colors">
+    <header className="sticky top-0 z-40 w-full border-b border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md transition-colors">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-2 sm:gap-4">
         {/* Logo */}
         <div
           onClick={onGoHome}
           className="flex items-center gap-2.5 sm:gap-3 cursor-pointer group shrink-0"
         >
-          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-cyan-400 to-violet-600 flex items-center justify-center text-[#060d1f] shadow-md shadow-cyan-500/20 group-hover:scale-105 transition">
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-md shadow-emerald-500/20 group-hover:scale-105 transition">
             <GraduationCap className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
           <div>
             <div className="flex items-center gap-1.5">
-              <span className="font-display font-bold text-sm sm:text-lg tracking-tight text-white">
+              <span className="font-extrabold text-sm sm:text-lg tracking-tight text-slate-900 dark:text-slate-100">
                 HSA ĐHQGHN
               </span>
-              <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+              <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
                 2026
               </span>
             </div>

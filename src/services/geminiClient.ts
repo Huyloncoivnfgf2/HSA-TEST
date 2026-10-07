@@ -1,4 +1,5 @@
 import { Question, SubjectType } from '../types/hsa';
+import { postProcessQuestion } from './textPostProcessor';
 
 export interface FileData {
   name: string;
@@ -128,7 +129,8 @@ async function callParseEndpoint(payload: {
     throw new Error(data.error || 'Không thể trích xuất câu hỏi từ tài liệu');
   }
 
-  return data.questions as Question[];
+  const questions = Array.isArray(data.questions) ? data.questions : [];
+  return questions.map((q: Question) => postProcessQuestion(q));
 }
 
 /**
