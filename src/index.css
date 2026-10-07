@@ -109,6 +109,14 @@ h4,
   background-color: var(--bg-surface-hover);
 }
 
+div[class*="rounded-3xl"][class*="bg-"],
+div[class*="rounded-2xl"][class*="bg-white"],
+div[class*="rounded-2xl"][class*="bg-slate-"] {
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-color: var(--border-glass);
+}
+
 :where(
   [class~="bg-white"],
   [class~="bg-slate-50"],

@@ -24,6 +24,7 @@ import { MathRenderer } from './MathRenderer';
 import { ConfirmationModal } from './ConfirmationModal';
 import { ReportQuestionModal } from './ReportQuestionModal';
 import { QuestionEditModal } from './QuestionEditModal';
+import { ExamToolbar } from './ExamToolbar';
 import {
   Clock,
   Flag,
@@ -106,6 +107,13 @@ export const ExamMode: React.FC<ExamModeProps> = ({
   const [isMobilePaletteOpen, setIsMobilePaletteOpen] = useState<boolean>(false);
   const [isMobileGroupOpen, setIsMobileGroupOpen] = useState<boolean>(true);
   const [resultFilter, setResultFilter] = useState<'all' | 'wrong' | 'correct' | 'unanswered'>('all');
+  const [activeTool, setActiveTool] = useState<
+    'pointer' | 'pen' | 'highlight' | 'underline' | 'eraser'
+  >('pointer');
+  const [activeColor, setActiveColor] = useState('#00e5ff');
+  const [strokeWidth, setStrokeWidth] = useState<'thin' | 'medium' | 'thick'>('medium');
+  const [isRulerOpen, setIsRulerOpen] = useState(false);
+  const [showAnnotations, setShowAnnotations] = useState(true);
 
   // Report & Edit Modal states
   const [reportingQuestion, setReportingQuestion] = useState<Question | null>(null);
@@ -1255,6 +1263,30 @@ export const ExamMode: React.FC<ExamModeProps> = ({
             <span>Nộp bài</span>
           </button>
         </div>
+      </div>
+
+      <div className="mt-4">
+        <ExamToolbar
+          activeTool={activeTool}
+          onChangeTool={setActiveTool}
+          activeColor={activeColor}
+          onChangeColor={setActiveColor}
+          strokeWidth={strokeWidth}
+          onChangeStrokeWidth={setStrokeWidth}
+          isRulerOpen={isRulerOpen}
+          onToggleRuler={() => setIsRulerOpen((open) => !open)}
+          onUndo={() => undefined}
+          onRedo={() => undefined}
+          onClear={() => {
+            setActiveTool('pointer');
+            setIsRulerOpen(false);
+          }}
+          canUndo={false}
+          canRedo={false}
+          subject={currentSubject}
+          showAnnotations={showAnnotations}
+          onToggleShowAnnotations={() => setShowAnnotations((visible) => !visible)}
+        />
       </div>
 
       {/* Main Layout: Question (Left/Center) + Palette (Right on desktop) */}
