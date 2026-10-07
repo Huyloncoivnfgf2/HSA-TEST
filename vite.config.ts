@@ -16,6 +16,21 @@ function geminiApiPlugin(): Plugin {
           return;
         }
 
+        const abortController = new AbortController();
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache, no-transform',
+          Connection: 'keep-alive',
+          'X-Accel-Buffering': 'no',
+        });
+        res.on('close', () => {
+          if (!res.writableEnded) abortController.abort();
+        });
+
+        const sendEvent = (event: unknown) => {
+          if (!res.writableEnded) res.write(`data: ${JSON.stringify(event)}\n\n`);
+        };
+
         try {
           const buffers: Buffer[] = [];
           for await (const chunk of req) {
@@ -24,13 +39,16 @@ function geminiApiPlugin(): Plugin {
           const bodyStr = Buffer.concat(buffers).toString('utf-8');
           const payload = JSON.parse(bodyStr);
 
-          const questions = await parseQuestionsWithGemini(payload);
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: true, questions }));
+          await parseQuestionsWithGemini(payload, {
+            signal: abortController.signal,
+            retryChunk: payload.retryChunk,
+            onChunk: sendEvent,
+          });
+          res.end();
         } catch (err: any) {
           console.error('Gemini parse error:', err);
-          res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: false, error: err.message || 'Lỗi xử lý AI' }));
+          sendEvent({ error: err.message || 'Lỗi xử lý AI', done: true });
+          res.end();
         }
       });
 
@@ -104,4 +122,3 @@ export default defineConfig(() => {
     },
   };
 });
-

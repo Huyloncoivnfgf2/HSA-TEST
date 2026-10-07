@@ -1,4 +1,6 @@
 import { GoogleGenAI, Type } from '@google/genai';
+import { createHash } from 'node:crypto';
+import { PDFParse } from 'pdf-parse';
 import { SubjectType, ScienceSubSubject, DifficultyLevel, STANDARD_TOPICS } from '../src/types/hsa';
 
 export interface FileItemPayload {
@@ -21,7 +23,7 @@ export interface AnswerKeyParsePayload {
   file?: FileItemPayload;
 }
 
-export async function parseQuestionsWithGemini(payload: ParseRequestPayload) {
+async function parseRawQuestionsWithGemini(payload: ParseRequestPayload, signal?: AbortSignal) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error('Chưa cấu hình GEMINI_API_KEY trong hệ thống.');
@@ -109,6 +111,7 @@ ${standardTopicsStr}
     model: 'gemini-3.8-flash',
     contents: contents.length === 1 ? contents[0].text : { parts: contents },
     config: {
+      abortSignal: signal,
       systemInstruction,
       temperature: 0.15,
       responseMimeType: 'application/json',
@@ -277,6 +280,243 @@ ${standardTopicsStr}
   });
 }
 
+export interface ParseChunkEvent {
+  chunk: number;
+  total: number;
+  questions: Awaited<ReturnType<typeof parseRawQuestionsWithGemini>>;
+  done: false;
+  error?: string;
+  startPage?: number;
+  endPage?: number;
+  pageCount?: number;
+}
+
+interface PdfParseOptions {
+  onChunk?: (event: ParseChunkEvent | { done: true; total_questions: number; total: number }) => void | Promise<void>;
+  signal?: AbortSignal;
+  retryChunk?: number;
+}
+
+const PDF_MAX_BYTES = 20 * 1024 * 1024;
+const PDF_CHUNK_PAGES = 5;
+const PDF_CHUNK_CONCURRENCY = 3;
+const PDF_CHUNK_TIMEOUT_MS = 30_000;
+const pdfQuestionCache = new Map<string, {
+  pageCount: number;
+  pageTexts: string[];
+  chunks: Array<ParseChunkEvent['questions'] | undefined>;
+}>();
+
+function getPdfFiles(payload: ParseRequestPayload): FileItemPayload[] {
+  const files = payload.files?.length ? payload.files : payload.file ? [payload.file] : [];
+  return files.filter((file) => file.mimeType === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'));
+}
+
+async function extractPdfPages(buffer: Buffer): Promise<string[]> {
+  const parser = new PDFParse({ data: Uint8Array.from(buffer) });
+  try {
+    const result = await parser.getText({ pageJoiner: '' });
+    return Array.from({ length: result.total }, (_, index) => result.getPageText(index + 1).trim());
+  } finally {
+    await parser.destroy();
+  }
+}
+
+async function renderPdfPages(buffer: Buffer, startPage: number, endPage: number) {
+  const parser = new PDFParse({ data: Uint8Array.from(buffer) });
+  try {
+    const result = await parser.getScreenshot({
+      partial: Array.from({ length: endPage - startPage + 1 }, (_, index) => startPage + index),
+      imageDataUrl: true,
+      imageBuffer: false,
+      scale: 1.5,
+    });
+    return result.pages.map((page) => ({
+      name: `page-${page.pageNumber}.png`,
+      mimeType: 'image/png',
+      base64: page.dataUrl.replace(/^data:image\/png;base64,/, ''),
+    }));
+  } finally {
+    await parser.destroy();
+  }
+}
+
+function withChunkTimeout<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  signal?: AbortSignal
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const controller = new AbortController();
+    const cleanup = () => {
+      clearTimeout(timeout);
+      signal?.removeEventListener('abort', onAbort);
+    };
+    const timeout = setTimeout(() => {
+      controller.abort();
+      reject(new Error('Chunk vượt quá thời gian xử lý 30 giây.'));
+      cleanup();
+    }, PDF_CHUNK_TIMEOUT_MS);
+    const onAbort = () => {
+      controller.abort();
+      reject(new Error('Đã hủy xử lý tài liệu.'));
+      cleanup();
+    };
+
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    signal?.addEventListener('abort', onAbort, { once: true });
+    operation(controller.signal).then(resolve, reject).finally(cleanup);
+  });
+}
+
+async function parsePdfQuestionsWithGemini(
+  payload: ParseRequestPayload,
+  options: PdfParseOptions
+) {
+  const file = getPdfFiles(payload)[0];
+  if (!file) return parseRawQuestionsWithGemini(payload);
+
+  const buffer = Buffer.from(file.base64, 'base64');
+  if (buffer.length > PDF_MAX_BYTES) {
+    throw new Error('Tệp PDF vượt quá giới hạn 20 MB. Vui lòng chọn tệp nhỏ hơn.');
+  }
+
+  const cacheKey = createHash('md5').update(buffer).digest('hex');
+  let cached = pdfQuestionCache.get(cacheKey);
+
+  if (!cached) {
+    const pageTexts = await extractPdfPages(buffer);
+    if (pageTexts.length === 0) {
+      throw new Error('Không đọc được trang nào từ tệp PDF.');
+    }
+    cached = {
+      pageCount: pageTexts.length,
+      pageTexts,
+      chunks: Array.from({ length: Math.ceil(pageTexts.length / PDF_CHUNK_PAGES) }),
+    };
+    pdfQuestionCache.set(cacheKey, cached);
+  }
+
+  const total = cached.chunks.length;
+  const selectedChunks = options.retryChunk !== undefined
+    ? [options.retryChunk - 1]
+    : cached.chunks.map((_, index) => index).filter((index) => !cached?.chunks[index]);
+
+  await options.onChunk?.({
+    chunk: 0,
+    total,
+    questions: [],
+    done: false,
+    pageCount: cached.pageCount,
+  });
+
+  if (options.retryChunk !== undefined && (options.retryChunk < 1 || options.retryChunk > total)) {
+    throw new Error('Số chunk cần thử lại không hợp lệ.');
+  }
+
+  if (options.retryChunk === undefined) {
+    for (let index = 0; index < cached.chunks.length; index += 1) {
+      const questions = cached.chunks[index];
+      if (!questions) continue;
+      const startPage = index * PDF_CHUNK_PAGES;
+      await options.onChunk?.({
+        chunk: index + 1,
+        total,
+        questions,
+        done: false,
+        startPage: startPage + 1,
+        endPage: Math.min(startPage + PDF_CHUNK_PAGES, cached.pageCount),
+      });
+    }
+  }
+
+  for (let offset = 0; offset < selectedChunks.length; offset += PDF_CHUNK_CONCURRENCY) {
+    if (options.signal?.aborted) throw new Error('Đã hủy xử lý tài liệu.');
+    const batch = selectedChunks.slice(offset, offset + PDF_CHUNK_CONCURRENCY);
+    const pending = batch.map(async (chunkIndex) => {
+      const startPage = chunkIndex * PDF_CHUNK_PAGES;
+      const endPage = Math.min(startPage + PDF_CHUNK_PAGES, cached!.pageCount);
+      const chunkText = cached!.pageTexts.slice(startPage, endPage);
+      const hasTextLayer = chunkText.every((pageText) => pageText.length > 0);
+      const questions = await withChunkTimeout(
+        async (signal) => {
+          const chunkPayload: ParseRequestPayload = hasTextLayer
+            ? {
+                ...payload,
+                files: undefined,
+                file: undefined,
+                text: `${payload.text?.trim() ? `${payload.text.trim()}\n\n` : ''}Nội dung PDF trang ${startPage + 1}-${endPage}:\n${chunkText.join('\n\n')}`,
+              }
+            : {
+                ...payload,
+                files: await renderPdfPages(buffer, startPage + 1, endPage),
+                file: undefined,
+                text: `Chỉ trích xuất câu hỏi nằm trong các trang ${startPage + 1}-${endPage} của tài liệu PDF này.${payload.text?.trim() ? `\n\n${payload.text.trim()}` : ''}`,
+              };
+          return parseRawQuestionsWithGemini(chunkPayload, signal);
+        },
+        options.signal
+      );
+      cached!.chunks[chunkIndex] = questions;
+      await options.onChunk?.({
+        chunk: chunkIndex + 1,
+        total,
+        questions,
+        done: false,
+        startPage: startPage + 1,
+        endPage,
+      });
+    });
+
+    const results = await Promise.allSettled(pending);
+    for (let index = 0; index < results.length; index += 1) {
+      const result = results[index];
+      if (result.status === 'rejected') {
+        const chunkIndex = batch[index];
+        const startPage = chunkIndex * PDF_CHUNK_PAGES;
+        await options.onChunk?.({
+          chunk: chunkIndex + 1,
+          total,
+          questions: [],
+          done: false,
+          error: result.reason instanceof Error ? result.reason.message : 'Lỗi xử lý chunk.',
+          startPage: startPage + 1,
+          endPage: Math.min(startPage + PDF_CHUNK_PAGES, cached.pageCount),
+        });
+      }
+    }
+  }
+
+  const allQuestions = cached.chunks.flatMap((questions) => questions || []);
+  await options.onChunk?.({ done: true, total_questions: allQuestions.length, total });
+
+  if (pdfQuestionCache.size > 20) {
+    const oldestKey = pdfQuestionCache.keys().next().value;
+    if (oldestKey) pdfQuestionCache.delete(oldestKey);
+  }
+  return allQuestions;
+}
+
+export async function parseQuestionsWithGemini(
+  payload: ParseRequestPayload,
+  options: PdfParseOptions = {}
+) {
+  const allFiles = payload.files?.length ? payload.files : payload.file ? [payload.file] : [];
+  if (allFiles.some((file) => Buffer.byteLength(file.base64, 'base64') > PDF_MAX_BYTES)) {
+    throw new Error('Tệp vượt quá giới hạn 20 MB. Vui lòng chọn tệp nhỏ hơn.');
+  }
+  const pdfFiles = getPdfFiles(payload);
+  if (pdfFiles.length > 0) {
+    return parsePdfQuestionsWithGemini(payload, options);
+  }
+  const questions = await parseRawQuestionsWithGemini(payload, options.signal);
+  await options.onChunk?.({ chunk: 1, total: 1, questions, done: false });
+  await options.onChunk?.({ done: true, total_questions: questions.length, total: 1 });
+  return questions;
+}
+
 // ==========================================
 // PARSE STANDALONE ANSWER KEY SHEET
 // ==========================================
@@ -409,4 +649,3 @@ TUYỆT ĐỐI CHỈ DỰA TRÊN DỮ LIỆU THẬT TRÊN, KHÔNG TỰ BỊA Đ�
     return 'Hãy tiếp tục rà soát các chủ đề còn yếu trong sổ lỗi sai để nâng cao điểm số.';
   }
 }
-

@@ -67,6 +67,13 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
   const [progressStatus, setProgressStatus] = useState<string>('');
   const [progressPercent, setProgressPercent] = useState<number>(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [failedPdfChunks, setFailedPdfChunks] = useState<Array<{
+    fileData: FileData;
+    chunk: number;
+    total: number;
+    message: string;
+    extraText?: string;
+  }>>([]);
 
   // Review stage
   const [previewQuestions, setPreviewQuestions] = useState<Question[] | null>(null);
@@ -83,6 +90,7 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const answerKeyFileRef = useRef<HTMLInputElement>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
+  const parseAbortControllerRef = useRef<AbortController | null>(null);
 
   if (!isOpen) return null;
 
@@ -99,10 +107,16 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
   const handleFilesSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const newFiles = Array.from(e.target.files);
-      setSelectedFiles((prev) => [...prev, ...newFiles]);
-      setErrorMessage(null);
-      if (!examSetTitle && newFiles.length > 0) {
-        const cleanName = newFiles[0].name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+      const oversizedFiles = newFiles.filter((file) => file.size > 20 * 1024 * 1024);
+      const acceptedFiles = newFiles.filter((file) => file.size <= 20 * 1024 * 1024);
+      setSelectedFiles((prev) => [...prev, ...acceptedFiles]);
+      setErrorMessage(
+        oversizedFiles.length > 0
+          ? `Tệp "${oversizedFiles[0].name}" vượt quá giới hạn 20 MB. Vui lòng chọn tệp nhỏ hơn.`
+          : null
+      );
+      if (!examSetTitle && acceptedFiles.length > 0) {
+        const cleanName = acceptedFiles[0].name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
         setExamSetTitle(cleanName);
       }
     }
@@ -110,6 +124,69 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
 
   const handleRemoveFile = (index: number) => {
     setSelectedFiles((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const streamPdfQuestions = async (
+    fileData: FileData,
+    signal: AbortSignal,
+    retryChunk?: number,
+    extraText?: string,
+    onChunk?: (event: {
+      chunk: number;
+      total: number;
+      questions?: Question[];
+      error?: string;
+      done?: boolean;
+      total_questions?: number;
+      pageCount?: number;
+      startPage?: number;
+      endPage?: number;
+    }) => void
+  ) => {
+    const response = await fetch('/api/gemini/parse-questions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal,
+      body: JSON.stringify({
+        autoClassify,
+        preferredSubject: autoClassify ? 'auto' : forcedSubject,
+        files: [fileData],
+        text: extraText,
+        retryChunk,
+      }),
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error('Không thể kết nối luồng xử lý PDF.');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let pending = '';
+
+    const processEventBlock = (block: string) => {
+      const data = block
+        .split('\n')
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trim())
+        .join('\n');
+      if (!data) return;
+      const event = JSON.parse(data);
+      if (event.error && event.chunk === undefined) {
+        throw new Error(event.error);
+      }
+      onChunk?.(event);
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      pending += decoder.decode(value, { stream: !done }).replace(/\r\n/g, '\n');
+      const blocks = pending.split('\n\n');
+      pending = blocks.pop() || '';
+      blocks.forEach(processEventBlock);
+      if (done) break;
+    }
+    if (pending.trim()) processEventBlock(pending);
   };
 
   // Main AI Extraction Handler
@@ -130,15 +207,25 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
 
     setIsProcessing(true);
     setErrorMessage(null);
+    setFailedPdfChunks([]);
     setProgressPercent(10);
     setProgressStatus('Đang đọc và chuyển đổi tài liệu...');
+    const abortController = new AbortController();
+    parseAbortControllerRef.current = abortController;
 
     try {
+      if (selectedFiles.some((file) => file.size > 20 * 1024 * 1024)) {
+        throw new Error('Tệp vượt quá giới hạn 20 MB. Vui lòng chọn tệp nhỏ hơn.');
+      }
+
       const fileDataList: FileData[] = [];
+      const pdfFiles: FileData[] = [];
       let combinedText = rawText.trim();
+      let hadPdfChunkError = false;
 
       // Read all selected files
       for (let i = 0; i < selectedFiles.length; i++) {
+        if (abortController.signal.aborted) throw new DOMException('Aborted', 'AbortError');
         const file = selectedFiles[i];
         const ext = file.name.split('.').pop()?.toLowerCase();
 
@@ -147,33 +234,110 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
           combinedText = combinedText ? `${combinedText}\n\n${txt}` : txt;
         } else {
           const base64 = await fileToBase64(file);
-          fileDataList.push({
+          const fileData = {
             name: file.name,
             mimeType: file.type || (ext === 'pdf' ? 'application/pdf' : 'application/octet-stream'),
             base64,
-          });
+          };
+          if (ext === 'pdf') {
+            pdfFiles.push(fileData);
+          } else {
+            fileDataList.push(fileData);
+          }
         }
       }
 
       setProgressPercent(30);
 
-      const extracted = await parseQuestionsWithAI(
-        {
-          autoClassify,
-          preferredSubject: autoClassify ? 'auto' : forcedSubject,
-          onProgress: (status) => {
-            if (status.message) setProgressStatus(status.message);
-            if (status.currentFileIndex && status.totalFiles) {
-              const pct = 30 + Math.floor((status.currentFileIndex / status.totalFiles) * 60);
-              setProgressPercent(pct);
+      const extracted: Question[] = [];
+      if (pdfFiles.length > 0) {
+        for (let fileIndex = 0; fileIndex < pdfFiles.length; fileIndex += 1) {
+          const fileData = pdfFiles[fileIndex];
+          const extraText = fileIndex === 0 ? combinedText : undefined;
+          let pageCount = 0;
+          const completedChunks = new Set<number>();
+          await streamPdfQuestions(
+            fileData,
+            abortController.signal,
+            undefined,
+            extraText,
+            (event) => {
+              if (event.pageCount) {
+                pageCount = event.pageCount;
+                setProgressStatus(`Đang xử lý trang 1-${Math.min(5, event.pageCount)} / ${event.pageCount}...`);
+              }
+              if (event.chunk > 0) {
+                completedChunks.add(event.chunk);
+                setProgressPercent(Math.floor((completedChunks.size / event.total) * 100));
+              }
+              if (event.error) {
+                hadPdfChunkError = true;
+                setProgressStatus(`Chunk ${event.chunk}/${event.total} bị lỗi.`);
+                setFailedPdfChunks((prev) => [
+                  ...prev.filter((item) => !(item.fileData.name === fileData.name && item.chunk === event.chunk)),
+                  {
+                    fileData,
+                    chunk: event.chunk,
+                    total: event.total,
+                    message: event.error!,
+                    extraText,
+                  },
+                ]);
+                return;
+              }
+              if (event.chunk > 0 && event.questions?.length) {
+                const scopedQuestions = event.questions.map((question) => ({
+                  ...question,
+                  groupId: question.groupId ? `${fileData.name}-chunk-${event.chunk}-${question.groupId}` : undefined,
+                }));
+                const checkedQuestions = scopedQuestions.map((question) => {
+                  const duplicate = isDuplicateOfExisting(question.questionText);
+                  return duplicate
+                    ? {
+                        ...question,
+                        hasWarning: true,
+                        warningReason: question.warningReason
+                          ? `${question.warningReason} • Câu hỏi có thể bị trùng với đề đã có`
+                          : 'Câu hỏi có thể bị trùng với câu đã có trong ngân hàng',
+                      }
+                    : question;
+                });
+                extracted.push(...scopedQuestions);
+                setPreviewQuestions((prev) => [...(prev || []), ...checkedQuestions]);
+                setExpandedGroups((prev) => ({
+                  ...prev,
+                  ...Object.fromEntries(scopedQuestions.filter((question) => question.groupId).map((question) => [question.groupId!, true])),
+                }));
+              }
+              if (event.chunk > 0 && event.startPage && event.endPage) {
+                setProgressStatus(`Đang xử lý trang ${event.startPage}-${event.endPage} / ${pageCount || '?'}...`);
+              }
             }
-          },
-        },
-        combinedText,
-        fileDataList
-      );
+          );
+        }
+      }
 
-      if (!extracted || extracted.length === 0) {
+      if (fileDataList.length > 0 || (pdfFiles.length === 0 && combinedText)) {
+        const otherQuestions = await parseQuestionsWithAI(
+          {
+            autoClassify,
+            preferredSubject: autoClassify ? 'auto' : forcedSubject,
+            signal: abortController.signal,
+            onProgress: (status) => {
+              if (status.message) setProgressStatus(status.message);
+              if (status.currentFileIndex && status.totalFiles) {
+                const pct = 30 + Math.floor((status.currentFileIndex / status.totalFiles) * 60);
+                setProgressPercent(pct);
+              }
+            },
+          },
+          pdfFiles.length > 0 ? undefined : combinedText,
+          fileDataList
+        );
+        extracted.push(...otherQuestions);
+      }
+
+      if (!extracted.length && !hadPdfChunkError) {
         throw new Error('AI không tìm thấy câu hỏi hợp lệ trong nội dung được cung cấp.');
       }
 
@@ -200,11 +364,86 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
       setExpandedGroups(groupsMap);
 
       setProgressPercent(100);
-      setPreviewQuestions(checkedQuestions);
+      if (pdfFiles.length === 0 || checkedQuestions.length > 0) setPreviewQuestions(checkedQuestions);
     } catch (err: any) {
+      if (err.name === 'AbortError') {
+        setErrorMessage('Đã hủy xử lý tài liệu. Các câu hỏi đã nhận vẫn được giữ lại.');
+        return;
+      }
       console.error('Lỗi trích xuất đề thi:', err);
       setErrorMessage(err.message || 'Đã xảy ra lỗi trong quá trình xử lý với AI.');
     } finally {
+      parseAbortControllerRef.current = null;
+      setIsProcessing(false);
+    }
+  };
+
+  const handleRetryPdfChunk = async (failedChunk: (typeof failedPdfChunks)[number]) => {
+    setIsProcessing(true);
+    setErrorMessage(null);
+    const abortController = new AbortController();
+    parseAbortControllerRef.current = abortController;
+    try {
+      await streamPdfQuestions(
+        failedChunk.fileData,
+        abortController.signal,
+        failedChunk.chunk,
+        failedChunk.extraText,
+        (event) => {
+            if (event.pageCount) {
+              const startPage = (failedChunk.chunk - 1) * 5 + 1;
+              const endPage = Math.min(failedChunk.chunk * 5, event.pageCount);
+              setProgressStatus(`Đang xử lý trang ${startPage}-${endPage} / ${event.pageCount}...`);
+            }
+            if (event.error) {
+              setFailedPdfChunks((prev) =>
+                prev.map((item) =>
+                  item.fileData.name === failedChunk.fileData.name && item.chunk === failedChunk.chunk
+                    ? { ...item, message: event.error! }
+                    : item
+                )
+              );
+              return;
+            }
+            if (event.chunk === failedChunk.chunk) {
+              setProgressPercent(100);
+              if (event.questions?.length) {
+                const scopedQuestions = event.questions.map((question) => ({
+                  ...question,
+                  groupId: question.groupId
+                    ? `${failedChunk.fileData.name}-chunk-${event.chunk}-${question.groupId}`
+                    : undefined,
+                }));
+                const checkedQuestions = scopedQuestions.map((question) => {
+                  const duplicate = isDuplicateOfExisting(question.questionText);
+                  return duplicate
+                    ? {
+                        ...question,
+                        hasWarning: true,
+                        warningReason: question.warningReason
+                          ? `${question.warningReason} • Câu hỏi có thể bị trùng với đề đã có`
+                          : 'Câu hỏi có thể bị trùng với câu đã có trong ngân hàng',
+                      }
+                    : question;
+                });
+                setPreviewQuestions((prev) => [...(prev || []), ...checkedQuestions]);
+                setExpandedGroups((prev) => ({
+                  ...prev,
+                  ...Object.fromEntries(scopedQuestions.filter((question) => question.groupId).map((question) => [question.groupId!, true])),
+                }));
+              }
+              setFailedPdfChunks((prev) =>
+                prev.filter((item) => !(item.fileData.name === failedChunk.fileData.name && item.chunk === failedChunk.chunk))
+              );
+            }
+        }
+      );
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        setErrorMessage(err.message || `Không thể thử lại chunk ${failedChunk.chunk}.`);
+      }
+    } finally {
+      parseAbortControllerRef.current = null;
       setIsProcessing(false);
     }
   };
@@ -434,6 +673,52 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
             </div>
           )}
 
+          {failedPdfChunks.map((failedChunk) => (
+            <div
+              key={`${failedChunk.fileData.name}-${failedChunk.chunk}`}
+              className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-sm"
+            >
+              <span>
+                Chunk {failedChunk.chunk}/{failedChunk.total} của "{failedChunk.fileData.name}" bị lỗi: {failedChunk.message}
+              </span>
+              <button
+                type="button"
+                disabled={isProcessing}
+                onClick={() => handleRetryPdfChunk(failedChunk)}
+                className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 disabled:bg-slate-400 text-white text-xs font-bold"
+              >
+                Thử lại chunk {failedChunk.chunk}
+              </button>
+            </div>
+          ))}
+
+          {isProcessing && (
+            <div className="p-4 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 space-y-2.5 animate-in fade-in">
+              <div className="flex items-center justify-between text-xs font-semibold text-emerald-800 dark:text-emerald-200">
+                <span className="flex items-center gap-2">
+                  <div className="w-3.5 h-3.5 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+                  {progressStatus || 'Đang xử lý tài liệu...'}
+                </span>
+                <span className="flex items-center gap-3">
+                  {progressPercent}%
+                  <button
+                    type="button"
+                    onClick={() => parseAbortControllerRef.current?.abort()}
+                    className="px-2.5 py-1 rounded-md bg-rose-600 hover:bg-rose-700 text-white"
+                  >
+                    Hủy
+                  </button>
+                </span>
+              </div>
+              <div className="w-full h-2 rounded-full bg-emerald-200 dark:bg-emerald-900 overflow-hidden">
+                <div
+                  className="h-full bg-emerald-600 transition-all duration-300"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+            </div>
+          )}
+
           {matchReport && (
             <div className="flex items-start gap-3 p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 text-emerald-700 dark:text-emerald-300 text-sm">
               <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" />
@@ -616,28 +901,6 @@ Câu 17: ..."
                       className="w-full p-4 text-sm rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-mono focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
                     />
                   </div>
-
-                  {/* Progress indicator during AI parsing */}
-                  {isProcessing && (
-                    <div className="p-4 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 space-y-2.5 animate-in fade-in">
-                      <div className="flex items-center justify-between text-xs font-semibold text-emerald-800 dark:text-emerald-200">
-                        <span className="flex items-center gap-2">
-                          <div className="w-3.5 h-3.5 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
-                          {progressStatus || 'Đang xử lý tài liệu...'}
-                        </span>
-                        <span>{progressPercent}%</span>
-                      </div>
-                      <div className="w-full h-2 rounded-full bg-emerald-200 dark:bg-emerald-900 overflow-hidden">
-                        <div
-                          className="h-full bg-emerald-600 transition-all duration-300"
-                          style={{ width: `${progressPercent}%` }}
-                        />
-                      </div>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                        Nếu tài liệu dài hoặc nhiều file, quá trình xử lý diễn ra theo từng phần và lưu kết quả an toàn.
-                      </p>
-                    </div>
-                  )}
 
                   {/* Extract Button */}
                   <button
@@ -1128,15 +1391,17 @@ Câu 17: ..."
             <>
               <button
                 type="button"
+                disabled={isProcessing}
                 onClick={() => setPreviewQuestions(null)}
-                className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 rounded-xl"
+                className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 disabled:opacity-50 rounded-xl"
               >
                 Quay lại tải file
               </button>
               <button
                 type="button"
+                disabled={isProcessing || previewQuestions.length === 0}
                 onClick={handleConfirmSave}
-                className="flex items-center gap-2 py-2.5 px-6 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md transition"
+                className="flex items-center gap-2 py-2.5 px-6 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white font-bold text-sm shadow-md transition"
               >
                 <Save className="w-4 h-4" />
                 <span>Lưu {previewQuestions.length} câu vào ngân hàng đề</span>

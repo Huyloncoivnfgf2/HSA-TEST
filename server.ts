@@ -14,13 +14,32 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // API route for parsing HSA exam questions via Gemini 3.8 Flash
 app.post('/api/gemini/parse-questions', async (req, res) => {
+  const abortController = new AbortController();
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+  res.on('close', () => {
+    if (!res.writableEnded) abortController.abort();
+  });
+
+  const sendEvent = (event: unknown) => {
+    if (!res.writableEnded) res.write(`data: ${JSON.stringify(event)}\n\n`);
+  };
+
   try {
     const payload = req.body;
-    const questions = await parseQuestionsWithGemini(payload);
-    res.json({ success: true, questions });
+    await parseQuestionsWithGemini(payload, {
+      signal: abortController.signal,
+      retryChunk: payload.retryChunk,
+      onChunk: sendEvent,
+    });
+    res.end();
   } catch (err: any) {
     console.error('Lỗi Gemini API:', err);
-    res.status(500).json({ success: false, error: err.message || 'Lỗi xử lý câu hỏi với Gemini' });
+    sendEvent({ error: err.message || 'Lỗi xử lý câu hỏi với Gemini', done: true });
+    res.end();
   }
 });
 

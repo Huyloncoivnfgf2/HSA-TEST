@@ -9,6 +9,7 @@ export interface FileData {
 export interface ParseOptions {
   autoClassify?: boolean;
   preferredSubject?: SubjectType | 'auto';
+  signal?: AbortSignal;
   onProgress?: (status: {
     stage: 'reading' | 'ai_processing' | 'done' | 'error';
     currentFileIndex?: number;
@@ -54,7 +55,7 @@ export async function parseQuestionsWithAI(
       autoClassify,
       preferredSubject,
       text: text.trim(),
-    });
+    }, onProgress, options.signal);
 
     return res;
   }
@@ -79,12 +80,13 @@ export async function parseQuestionsWithAI(
         files: [f],
         // Only include text for first file if provided
         text: i === 0 && text ? text.trim() : undefined,
-      });
+      }, onProgress, options.signal);
 
       if (Array.isArray(questionsFromFile)) {
         allExtracted.push(...questionsFromFile);
       }
     } catch (err: any) {
+      if (err.name === 'AbortError') throw err;
       console.warn(`Lỗi khi xử lý file "${f.name}":`, err);
       // If we already parsed questions from earlier files, notify user and keep existing
       if (allExtracted.length > 0) {
@@ -114,21 +116,59 @@ async function callParseEndpoint(payload: {
   preferredSubject?: SubjectType | 'auto';
   text?: string;
   files?: FileData[];
-}): Promise<Question[]> {
+}, onProgress?: ParseOptions['onProgress'], signal?: AbortSignal): Promise<Question[]> {
   const response = await fetch('/api/gemini/parse-questions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
+    signal,
     body: JSON.stringify(payload),
   });
 
-  const data = await response.json();
-  if (!response.ok || !data.success) {
-    throw new Error(data.error || 'Không thể trích xuất câu hỏi từ tài liệu');
+  if (!response.ok || !response.body) {
+    throw new Error('Không thể trích xuất câu hỏi từ tài liệu');
   }
 
-  return data.questions as Question[];
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const questions: Question[] = [];
+  let pending = '';
+  let finished = false;
+
+  const processBlock = (block: string) => {
+    const data = block
+      .split('\n')
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).trim())
+      .join('\n');
+    if (!data) return;
+    const event = JSON.parse(data);
+    if (event.error && event.chunk === undefined) {
+      throw new Error(event.error);
+    }
+    if (Array.isArray(event.questions)) questions.push(...event.questions);
+    if (event.error) {
+      onProgress?.({
+        stage: 'error',
+        message: `Lỗi chunk ${event.chunk}/${event.total}: ${event.error}`,
+      });
+    }
+    if (event.done) finished = true;
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    pending += decoder.decode(value, { stream: !done }).replace(/\r\n/g, '\n');
+    const blocks = pending.split('\n\n');
+    pending = blocks.pop() || '';
+    blocks.forEach(processBlock);
+    if (done) break;
+  }
+  if (pending.trim()) processBlock(pending);
+  if (!finished) throw new Error('Luồng xử lý câu hỏi kết thúc bất thường.');
+
+  return questions;
 }
 
 /**
