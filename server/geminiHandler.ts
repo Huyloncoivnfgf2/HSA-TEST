@@ -23,7 +23,77 @@ export interface AnswerKeyParsePayload {
   file?: FileItemPayload;
 }
 
-async function parseRawQuestionsWithGemini(payload: ParseRequestPayload, signal?: AbortSignal) {
+const GEMINI_MAX_RETRIES = 4;
+const GEMINI_RETRY_DELAYS_MS = [3000, 6000, 12000, 24000] as const;
+
+function isRetryableGeminiError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const { code, status, statusCode } = error as {
+    code?: unknown;
+    status?: unknown;
+    statusCode?: unknown;
+  };
+  const isRetryableCode = (value: unknown) => value === 503 || value === 429 || value === '503' || value === '429';
+  return isRetryableCode(code)
+    || isRetryableCode(statusCode)
+    || isRetryableCode(status)
+    || status === 'UNAVAILABLE';
+}
+
+function waitForRetry(delayMs: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error('Đã hủy xử lý tài liệu.'));
+      return;
+    }
+
+    const cleanup = () => {
+      clearTimeout(timeout);
+      signal?.removeEventListener('abort', onAbort);
+    };
+    const timeout = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, delayMs);
+    const onAbort = () => {
+      cleanup();
+      reject(new Error('Đã hủy xử lý tài liệu.'));
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+interface GeminiRetryOptions {
+  signal?: AbortSignal;
+  onRetry?: (retryNumber: number, delayMs: number) => void | Promise<void>;
+  wait?: (delayMs: number) => Promise<void>;
+}
+
+async function retryGeminiCall<T>(
+  operation: () => Promise<T>,
+  options: GeminiRetryOptions = {}
+): Promise<T> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (options.signal?.aborted || !isRetryableGeminiError(error) || attempt >= GEMINI_MAX_RETRIES) {
+        throw error;
+      }
+
+      const delayMs = GEMINI_RETRY_DELAYS_MS[attempt] + Math.random() * 1000;
+      await options.onRetry?.(attempt + 1, delayMs);
+      await (options.wait || ((delay) => waitForRetry(delay, options.signal)))(delayMs);
+    }
+  }
+}
+
+async function parseRawQuestionsWithGemini(
+  payload: ParseRequestPayload,
+  signal?: AbortSignal,
+  onRetry?: GeminiRetryOptions['onRetry'],
+  wait?: GeminiRetryOptions['wait']
+) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error('Chưa cấu hình GEMINI_API_KEY trong hệ thống.');
@@ -107,15 +177,16 @@ ${standardTopicsStr}
 
   contents.push({ text: promptText });
 
-  const response = await ai.models.generateContent({
-    model: 'gemini-3.8-flash',
-    contents: contents.length === 1 ? contents[0].text : { parts: contents },
-    config: {
-      abortSignal: signal,
-      systemInstruction,
-      temperature: 0.15,
-      responseMimeType: 'application/json',
-      responseSchema: {
+  const response = await retryGeminiCall(
+    () => ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: contents.length === 1 ? contents[0].text : { parts: contents },
+      config: {
+        abortSignal: signal,
+        systemInstruction,
+        temperature: 0.15,
+        responseMimeType: 'application/json',
+        responseSchema: {
         type: Type.ARRAY,
         description: 'Danh sách các câu hỏi đề thi HSA được trích xuất',
         items: {
@@ -185,9 +256,11 @@ ${standardTopicsStr}
           },
           required: ['questionText', 'part', 'chu_de', 'options'],
         },
+        },
       },
-    },
-  });
+    }),
+    { signal, onRetry, wait }
+  );
 
   const text = response.text || '[]';
   const parsed = JSON.parse(text);
@@ -286,6 +359,7 @@ export interface ParseChunkEvent {
   questions: Awaited<ReturnType<typeof parseRawQuestionsWithGemini>>;
   done: false;
   error?: string;
+  retryMessage?: string;
   startPage?: number;
   endPage?: number;
   pageCount?: number;
@@ -299,7 +373,7 @@ interface PdfParseOptions {
 
 const PDF_MAX_BYTES = 20 * 1024 * 1024;
 const PDF_CHUNK_PAGES = 5;
-const PDF_CHUNK_CONCURRENCY = 3;
+const PDF_CHUNK_CONCURRENCY = 1;
 const PDF_CHUNK_TIMEOUT_MS = 120_000;
 const pdfQuestionCache = new Map<string, {
   pageCount: number;
@@ -342,24 +416,56 @@ async function renderPdfPages(buffer: Buffer, startPage: number, endPage: number
 }
 
 function withChunkTimeout<T>(
-  operation: (signal: AbortSignal) => Promise<T>,
+  operation: (signal: AbortSignal, pauseTimeout: () => () => void) => Promise<T>,
   signal?: AbortSignal
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     const controller = new AbortController();
+    let settled = false;
+    let remaining = PDF_CHUNK_TIMEOUT_MS;
+    let startedAt = Date.now();
+    let timeout: ReturnType<typeof setTimeout>;
     const cleanup = () => {
       clearTimeout(timeout);
       signal?.removeEventListener('abort', onAbort);
     };
-    const timeout = setTimeout(() => {
-      controller.abort();
-      reject(new Error('Chunk vượt quá thời gian xử lý 120 giây.'));
+    const finish = <TResult>(callback: (value: TResult) => void, value: TResult) => {
+      if (settled) return;
+      settled = true;
       cleanup();
-    }, PDF_CHUNK_TIMEOUT_MS);
+      callback(value);
+    };
+    const onTimeout = () => {
+      controller.abort();
+      finish(reject, new Error('Chunk vượt quá thời gian xử lý 120 giây.'));
+    };
+    const scheduleTimeout = () => {
+      startedAt = Date.now();
+      timeout = setTimeout(onTimeout, remaining);
+    };
     const onAbort = () => {
       controller.abort();
-      reject(new Error('Đã hủy xử lý tài liệu.'));
-      cleanup();
+      finish(reject, new Error('Đã hủy xử lý tài liệu.'));
+    };
+    const pauseTimeout = () => {
+      if (settled) return () => {};
+      clearTimeout(timeout);
+      remaining -= Date.now() - startedAt;
+      if (remaining <= 0) {
+        onTimeout();
+        return () => {};
+      }
+      let resumed = false;
+      return () => {
+        if (resumed) return;
+        resumed = true;
+        if (settled || signal?.aborted) return;
+        if (remaining <= 0) {
+          onTimeout();
+          return;
+        }
+        scheduleTimeout();
+      };
     };
 
     if (signal?.aborted) {
@@ -367,7 +473,11 @@ function withChunkTimeout<T>(
       return;
     }
     signal?.addEventListener('abort', onAbort, { once: true });
-    operation(controller.signal).then(resolve, reject).finally(cleanup);
+    scheduleTimeout();
+    operation(controller.signal, pauseTimeout).then(
+      (result) => finish(resolve, result),
+      (error) => finish(reject, error)
+    );
   });
 }
 
@@ -441,7 +551,7 @@ async function parsePdfQuestionsWithGemini(
       const chunkText = cached!.pageTexts.slice(startPage, endPage);
       const hasTextLayer = chunkText.every((pageText) => pageText.length > 0);
       const questions = await withChunkTimeout(
-        async (signal) => {
+        async (signal, pauseTimeout) => {
           const chunkPayload: ParseRequestPayload = hasTextLayer
             ? {
                 ...payload,
@@ -455,7 +565,27 @@ async function parsePdfQuestionsWithGemini(
                 file: undefined,
                 text: `Chỉ trích xuất câu hỏi nằm trong các trang ${startPage + 1}-${endPage} của tài liệu PDF này.${payload.text?.trim() ? `\n\n${payload.text.trim()}` : ''}`,
               };
-          return parseRawQuestionsWithGemini(chunkPayload, signal);
+          return parseRawQuestionsWithGemini(
+            chunkPayload,
+            signal,
+            (retryNumber, delayMs) => options.onChunk?.({
+              chunk: chunkIndex + 1,
+              total,
+              questions: [],
+              done: false,
+              retryMessage: `Google đang bận, thử lại lần ${retryNumber}/${GEMINI_MAX_RETRIES} sau ${(delayMs / 1000).toFixed(1)} giây...`,
+              startPage: startPage + 1,
+              endPage,
+            }),
+            async (delayMs) => {
+              const resumeTimeout = pauseTimeout();
+              try {
+                await waitForRetry(delayMs, signal);
+              } finally {
+                resumeTimeout();
+              }
+            }
+          );
         },
         options.signal
       );
@@ -511,7 +641,17 @@ export async function parseQuestionsWithGemini(
   if (pdfFiles.length > 0) {
     return parsePdfQuestionsWithGemini(payload, options);
   }
-  const questions = await parseRawQuestionsWithGemini(payload, options.signal);
+  const questions = await parseRawQuestionsWithGemini(
+    payload,
+    options.signal,
+    (retryNumber, delayMs) => options.onChunk?.({
+      chunk: 1,
+      total: 1,
+      questions: [],
+      done: false,
+      retryMessage: `Google đang bận, thử lại lần ${retryNumber}/${GEMINI_MAX_RETRIES} sau ${(delayMs / 1000).toFixed(1)} giây...`,
+    })
+  );
   await options.onChunk?.({ chunk: 1, total: 1, questions, done: false });
   await options.onChunk?.({ done: true, total_questions: questions.length, total: 1 });
   return questions;
@@ -556,7 +696,7 @@ export async function parseAnswerKeyWithGemini(payload: AnswerKeyParsePayload) {
   }
   contents.push({ text: prompt });
 
-  const response = await ai.models.generateContent({
+  const response = await retryGeminiCall(() => ai.models.generateContent({
     model: 'gemini-3.8-flash',
     contents: contents.length === 1 ? contents[0].text : { parts: contents },
     config: {
@@ -577,7 +717,7 @@ export async function parseAnswerKeyWithGemini(payload: AnswerKeyParsePayload) {
         },
       },
     },
-  });
+  }));
 
   const text = response.text || '[]';
   return JSON.parse(text) as Array<{
@@ -634,14 +774,14 @@ Viết một nhận xét ngắn gọn, sắc bén đúng từ 3 đến 5 dòng b
 TUYỆT ĐỐI CHỈ DỰA TRÊN DỮ LIỆU THẬT TRÊN, KHÔNG TỰ BỊA ĐẶT THÊM SỐ LIỆU!`;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await retryGeminiCall(() => ai.models.generateContent({
       model: 'gemini-3.8-flash',
       contents: prompt,
       config: {
         systemInstruction: 'Bạn là chuyên gia tư vấn khảo thí HSA ĐHQGHN nghiêm túc, sâu sát và động viên thí sinh.',
         temperature: 0.2,
       },
-    });
+    }));
 
     return response.text?.trim() || 'Hãy tiếp tục rà soát các chủ đề còn yếu để nâng cao điểm số.';
   } catch (err) {

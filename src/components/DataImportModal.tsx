@@ -142,6 +142,7 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
       total: number;
       questions?: Question[];
       error?: string;
+      retryMessage?: string;
       done?: boolean;
       total_questions?: number;
       pageCount?: number;
@@ -261,6 +262,7 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
           const fileData = pdfFiles[fileIndex];
           const extraText = fileIndex === 0 ? combinedText : undefined;
           let pageCount = 0;
+          let retrying = false;
           const completedChunks = new Set<number>();
           await streamPdfQuestions(
             fileData,
@@ -268,6 +270,11 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
             undefined,
             extraText,
             (event) => {
+              if (event.retryMessage) {
+                retrying = true;
+                setProgressStatus(event.retryMessage);
+                return;
+              }
               if (event.pageCount) {
                 pageCount = event.pageCount;
                 setProgressStatus(`Đang xử lý trang 1-${Math.min(5, event.pageCount)} / ${event.pageCount}...`);
@@ -290,6 +297,10 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
                   },
                 ]);
                 return;
+              }
+              if (retrying && event.chunk > 0) {
+                setProgressStatus(`Đã xử lý chunk ${event.chunk}/${event.total}.`);
+                retrying = false;
               }
               if (event.chunk > 0 && event.questions?.length) {
                 const scopedQuestions = event.questions.map((question) => ({
