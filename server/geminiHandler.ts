@@ -300,7 +300,7 @@ interface PdfParseOptions {
 const PDF_MAX_BYTES = 20 * 1024 * 1024;
 const PDF_CHUNK_PAGES = 5;
 const PDF_CHUNK_CONCURRENCY = 3;
-const PDF_CHUNK_TIMEOUT_MS = 30_000;
+const PDF_CHUNK_TIMEOUT_MS = 120_000;
 const pdfQuestionCache = new Map<string, {
   pageCount: number;
   pageTexts: string[];
@@ -353,7 +353,7 @@ function withChunkTimeout<T>(
     };
     const timeout = setTimeout(() => {
       controller.abort();
-      reject(new Error('Chunk vượt quá thời gian xử lý 30 giây.'));
+      reject(new Error('Chunk vượt quá thời gian xử lý 120 giây.'));
       cleanup();
     }, PDF_CHUNK_TIMEOUT_MS);
     const onAbort = () => {
