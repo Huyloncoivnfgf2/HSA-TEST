@@ -47,7 +47,7 @@ interface NewPdfFile {
 }
 
 interface PdfExamLibraryProps {
-  onStart: (exam: PdfExam, mode: PdfExamMode) => void;
+  onStart: (exam: PdfExam, mode: PdfExamMode, options?: { isContentTest?: boolean }) => void;
   isAdmin: boolean;
 }
 
@@ -80,6 +80,7 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart, isAdmin
   const [answerKeyDraft, setAnswerKeyDraft] = useState('');
   const [answerKeyRows, setAnswerKeyRows] = useState<Record<number, string>>({});
   const [modeExam, setModeExam] = useState<PdfExam | null>(null);
+  const [contentTest, setContentTest] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<Record<string, string>>({});
   const [showBackupReminder, setShowBackupReminder] = useState(() => {
@@ -501,7 +502,7 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart, isAdmin
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <button type="button" onClick={() => setModeExam(exam)} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700"><Play className="h-3.5 w-3.5" /> Làm bài</button>
+                    <button type="button" onClick={() => { setContentTest(false); setModeExam(exam); }} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700"><Play className="h-3.5 w-3.5" /> Làm bài</button>
                     <button type="button" onClick={() => onStart(exam, 'review')} disabled={!exam.attempts?.length} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:hover:bg-slate-800"><BookOpen className="h-3.5 w-3.5" /> Xem lại</button>
                     {isAdmin && !exam.attempts?.length && (
                       <button
@@ -533,9 +534,15 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart, isAdmin
               <button type="button" onClick={() => setModeExam(null)} aria-label="Đóng" className="rounded-lg p-1 hover:bg-slate-100 dark:hover:bg-slate-800"><X className="h-4 w-4" /></button>
             </div>
             <div className="rounded-xl bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">Câu chưa có đáp án chuẩn sẽ được ghi nhận là chưa chấm và không tính vào điểm tối đa.</div>
+            {isAdmin && (
+              <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-slate-200 p-3 text-xs dark:border-slate-700">
+                <input type="checkbox" checked={contentTest} onChange={(event) => setContentTest(event.target.checked)} className="mt-0.5" />
+                <span><strong>Kiểm thử nội dung</strong> — lượt này chỉ để Owner kiểm tra đề/đáp án, không tính vào điểm cao nhất, lịch sử, Sổ lỗi hay ôn tập FSRS.</span>
+              </label>
+            )}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <button type="button" onClick={() => { setModeExam(null); onStart(modeExam, 'test'); }} className="rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-700">Kiểm tra · {SUBJECT_CONFIGS[modeExam.subject].durationMinutes} phút</button>
-              <button type="button" onClick={() => { setModeExam(null); onStart(modeExam, 'study'); }} className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">Ôn tập · không giới hạn giờ</button>
+              <button type="button" onClick={() => { setModeExam(null); onStart(modeExam, 'test', { isContentTest: contentTest }); }} className="rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-700">Kiểm tra · {SUBJECT_CONFIGS[modeExam.subject].durationMinutes} phút</button>
+              <button type="button" onClick={() => { setModeExam(null); onStart(modeExam, 'study', { isContentTest: contentTest }); }} className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">Ôn tập · không giới hạn giờ</button>
             </div>
           </div>
         </div>
