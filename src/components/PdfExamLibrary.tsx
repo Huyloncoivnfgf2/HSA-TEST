@@ -580,7 +580,7 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart, isAdmin
                       <span>Thêm ngày {new Date(exam.createdAt).toLocaleDateString('vi-VN')}</span>
                       <span>{exam.questionCount} câu</span>
                       <span>{examStatusLabels[exam.status ?? 'approved']}</span>
-                      <span>Đáp án: {getPdfExamReadiness(exam).answeredCount}/{exam.questionCount}</span>
+                      {isAdmin && <span>Đáp án: {getPdfExamReadiness(exam).answeredCount}/{exam.questionCount}</span>}
                       {exam.pageStart && <span>Trang {exam.pageStart}{exam.pageEnd ? `–${exam.pageEnd}` : ''}</span>}
                       {(exam.startQuestion ?? 1) > 1 && <span>Từ câu {exam.startQuestion}</span>}
                       {exam.version && <span>v{exam.version}</span>}
@@ -620,7 +620,7 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart, isAdmin
               <button type="button" onClick={() => setModeExam(null)} aria-label="Đóng" className="rounded-lg p-1 hover:bg-slate-100 dark:hover:bg-slate-800"><X className="h-4 w-4" /></button>
             </div>
             {(() => {
-              const readiness = getPdfExamReadiness(modeExam);
+              const readiness = getPdfExamReadiness(modeExam, { requireAnswerKey: isAdmin });
               return readiness.readyForNewAttempt ? (
                 <div className="rounded-xl bg-emerald-50 p-3 text-xs text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">Đề đã đủ điều kiện cho lượt thi mới.</div>
               ) : (
@@ -638,8 +638,8 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart, isAdmin
               </label>
             )}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <button type="button" disabled={!contentTest && !getPdfExamReadiness(modeExam).readyForNewAttempt} onClick={() => { setModeExam(null); onStart(modeExam, 'test', { isContentTest: contentTest }); }} className="rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-40">Kiểm tra · {SUBJECT_CONFIGS[modeExam.subject].durationMinutes} phút</button>
-              <button type="button" disabled={!contentTest && !getPdfExamReadiness(modeExam).readyForNewAttempt} onClick={() => { setModeExam(null); onStart(modeExam, 'study', { isContentTest: contentTest }); }} className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:hover:bg-slate-800">Ôn tập · không giới hạn giờ</button>
+              <button type="button" disabled={!contentTest && !getPdfExamReadiness(modeExam, { requireAnswerKey: isAdmin }).readyForNewAttempt} onClick={() => { setModeExam(null); onStart(modeExam, 'test', { isContentTest: contentTest }); }} className="rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-40">Kiểm tra · {SUBJECT_CONFIGS[modeExam.subject].durationMinutes} phút</button>
+              <button type="button" disabled={!contentTest && !getPdfExamReadiness(modeExam, { requireAnswerKey: isAdmin }).readyForNewAttempt} onClick={() => { setModeExam(null); onStart(modeExam, 'study', { isContentTest: contentTest }); }} className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:hover:bg-slate-800">Ôn tập · không giới hạn giờ</button>
             </div>
           </div>
         </div>
