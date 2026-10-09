@@ -14,6 +14,26 @@ const subjectForSection: Record<CloudExamRecord['section'], PdfSubject> = {
   khoa_hoc: 'science',
 };
 
+// Storage object keys must be fixed ASCII names. Original file names can
+// contain Vietnamese diacritics or spaces, which Supabase Storage rejects
+// with "Invalid key"; the friendly name lives in exams.title instead.
+function cloudPdfPath(examId: string): string {
+  return `${examId}/exam.pdf`;
+}
+
+function cloudSolutionPath(exam: PdfExam): string {
+  const solutionFileName = exam.solutionFileName ?? '';
+  const rawExtension = solutionFileName.includes('.')
+    ? solutionFileName.split('.').pop() ?? ''
+    : '';
+  const cleanExtension = rawExtension.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const mimeSubtype = exam.solutionBlob?.type.split('/')[1] ?? '';
+  const mimeExtension = mimeSubtype === 'svg+xml'
+    ? 'svg'
+    : mimeSubtype.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return `${exam.id}/solution.${cleanExtension || mimeExtension || 'pdf'}`;
+}
+
 export async function loadCloudExamLibrary(isAdmin = false): Promise<PdfExam[]> {
   if (!supabase) throw new Error('Supabase is not configured');
   const { data: records, error } = await supabase
@@ -46,7 +66,7 @@ export async function loadCloudExamLibrary(isAdmin = false): Promise<PdfExam[]> 
       createdAt: Date.parse(record.created_at),
       updatedAt: cloudUpdatedAt,
       questionCount: record.question_count,
-      pdfFileName: record.pdf_path.split('/').at(-1) ?? `${record.id}.pdf`,
+      pdfFileName: local?.pdfFileName ?? record.pdf_path.split('/').at(-1) ?? `${record.id}.pdf`,
       pdfBlob,
       solutionFileName: local?.solutionFileName,
       solutionPath: isAdmin || attempts.length ? local?.solutionPath : undefined,
@@ -93,16 +113,12 @@ export async function saveCloudAnswerKey(exam: PdfExam): Promise<void> {
 
 export async function updateCloudExamMetadata(exam: PdfExam): Promise<void> {
   if (!supabase) throw new Error('Supabase is not configured');
-  const pdfPath = `${exam.id}/${exam.pdfFileName}`;
-  const solutionPath = exam.solutionBlob && exam.solutionFileName
-    ? `${exam.id}/${exam.solutionFileName}`
-    : exam.solutionPath ?? null;
+  // Do not rewrite pdf_path/solution_path here: renaming metadata must keep
+  // pointing at the object that is already stored for this exam.
   const { error } = await supabase.from('exams').update({
     title: exam.title,
     section: sectionForSubject[exam.subject],
     question_count: exam.questionCount,
-    pdf_path: pdfPath,
-    solution_path: solutionPath,
     updated_at: new Date().toISOString(),
   }).eq('id', exam.id);
   if (error) throw error;
@@ -138,7 +154,7 @@ export async function uploadLocalExams(
   for (const exam of exams) {
     onProgress(exam.id, 'uploading');
     try {
-      const pdfPath = `${exam.id}/${exam.pdfFileName}`;
+      const pdfPath = cloudPdfPath(exam.id);
       const { error: pdfError } = await supabase.storage.from('exam-files').upload(pdfPath, exam.pdfBlob, {
         upsert: true,
         contentType: 'application/pdf',
@@ -146,7 +162,7 @@ export async function uploadLocalExams(
       if (pdfError) throw pdfError;
       let solutionPath: string | null = null;
       if (exam.solutionBlob && exam.solutionFileName) {
-        solutionPath = `${exam.id}/${exam.solutionFileName}`;
+        solutionPath = cloudSolutionPath(exam);
         const { error: solutionError } = await supabase.storage.from('exam-files').upload(solutionPath, exam.solutionBlob, {
           upsert: true,
           contentType: exam.solutionBlob.type || 'application/octet-stream',
@@ -163,7 +179,7 @@ export async function uploadLocalExams(
       });
       if (examError) throw examError;
       if (Object.keys(exam.answerKey).length) await saveCloudAnswerKey(exam);
-      await savePdfExam({ ...exam, updatedAt: Date.now() });
+      await savePdfExam({ ...exam, updatedAt: Date.now(), ...(solutionPath ? { solutionPath } : {}) });
       onProgress(exam.id, 'done');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Lỗi tải đề lên cloud';
