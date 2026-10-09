@@ -181,7 +181,10 @@ export interface PdfExamReadiness {
   answeredCount: number;
 }
 
-export function getPdfExamReadiness(exam: PdfExam): PdfExamReadiness {
+export function getPdfExamReadiness(
+  exam: PdfExam,
+  options: { requireAnswerKey?: boolean } = {}
+): PdfExamReadiness {
   const issues: string[] = [];
   const warnings: string[] = [];
   const startQuestion = exam.startQuestion ?? 1;
@@ -191,7 +194,7 @@ export function getPdfExamReadiness(exam: PdfExam): PdfExamReadiness {
   if (!Number.isSafeInteger(startQuestion) || startQuestion < 1) issues.push('Số câu bắt đầu chưa hợp lệ.');
   if (exam.pageStart !== undefined && (!Number.isSafeInteger(exam.pageStart) || exam.pageStart < 1)) issues.push('Trang bắt đầu chưa hợp lệ.');
   if (exam.pageEnd !== undefined && (!Number.isSafeInteger(exam.pageEnd) || exam.pageEnd < (exam.pageStart ?? 1))) issues.push('Khoảng trang chưa hợp lệ.');
-  if (answeredCount < exam.questionCount) issues.push(`Đáp án chuẩn mới có ${answeredCount}/${exam.questionCount} câu.`);
+  if (options.requireAnswerKey !== false && answeredCount < exam.questionCount) issues.push(`Đáp án chuẩn mới có ${answeredCount}/${exam.questionCount} câu.`);
   if ((exam.status ?? 'approved') !== 'approved') issues.push('Đề chưa được duyệt cho lượt thi mới.');
   if (!exam.solutionBlob && !exam.solutionPath) warnings.push('Chưa có lời giải; người học vẫn làm bài được nhưng không xem được lời giải sau khi nộp.');
   return { readyForNewAttempt: issues.length === 0, issues, warnings, answeredCount };
