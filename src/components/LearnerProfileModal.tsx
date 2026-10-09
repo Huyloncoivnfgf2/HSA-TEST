@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { CalendarDays, Flame, History, Target, Trophy, X } from 'lucide-react';
 import type { AnalyticsSummary, ExamRecord } from '../types/analytics';
+import { listMyContentReports, reportCategoryLabel, reportStatusLabel, type ContentReport } from '../services/contentReportService';
 
 interface LearnerProfileModalProps {
   isOpen: boolean;
@@ -24,6 +25,17 @@ export const LearnerProfileModal: React.FC<LearnerProfileModalProps> = ({
   mistakeCount,
   streakDays,
 }) => {
+  const [myReports, setMyReports] = useState<ContentReport[]>([]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let mounted = true;
+    void listMyContentReports()
+      .then((reports) => { if (mounted) setMyReports(reports.slice(0, 5)); })
+      .catch(() => { if (mounted) setMyReports([]); });
+    return () => { mounted = false; };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const recentHistory = [...history]
@@ -93,6 +105,26 @@ export const LearnerProfileModal: React.FC<LearnerProfileModalProps> = ({
               {analytics.goals.examDate ? <> · Ngày thi: <strong>{analytics.goals.examDate}</strong></> : null}
               <> · Mục tiêu mỗi ngày: <strong>{analytics.goals.dailyQuestionGoal} câu</strong></>
             </p>
+          </div>
+
+          <div>
+            <h3 className="mb-2 text-sm font-extrabold">Báo lỗi nội dung của tôi</h3>
+            {myReports.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-slate-300 p-4 text-center text-xs text-slate-500 dark:border-slate-700">Bạn chưa gửi báo lỗi nội dung nào.</p>
+            ) : (
+              <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+                {myReports.map((report) => (
+                  <li key={report.id} className="px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="min-w-0 truncate text-sm font-semibold">{report.examTitle} · Câu {report.questionNumber}</p>
+                      <span className="shrink-0 rounded-lg bg-amber-50 px-2 py-1 text-[11px] font-extrabold text-amber-700 dark:bg-amber-950 dark:text-amber-300">{reportStatusLabel(report.status)}</span>
+                    </div>
+                    <p className="mt-1 text-[11px] text-slate-500">{reportCategoryLabel(report.category)} · {new Date(report.createdAt).toLocaleString('vi-VN')}</p>
+                    {report.ownerNote && <p className="mt-1 rounded-lg bg-slate-50 p-2 text-[11px] leading-5 text-slate-600 dark:bg-slate-800/70 dark:text-slate-300">Phản hồi: {report.ownerNote}</p>}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           <div>
