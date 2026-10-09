@@ -1,5 +1,13 @@
 import { Question, SubjectType } from '../types/hsa';
 import { postProcessQuestion } from './textPostProcessor';
+import { supabase } from './supabaseClient';
+
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  if (!supabase) return {};
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 export interface FileData {
   name: string;
@@ -122,6 +130,7 @@ async function callParseEndpoint(payload: {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...(await getAuthHeaders()),
     },
     signal,
     body: JSON.stringify(payload),
@@ -146,6 +155,7 @@ export async function parseAnswerKeyWithAI(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...(await getAuthHeaders()),
     },
     body: JSON.stringify({ text, file }),
   });
@@ -176,6 +186,7 @@ export async function fetchExamFeedbackWithAI(payload: {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...(await getAuthHeaders()),
       },
       body: JSON.stringify(payload),
     });
