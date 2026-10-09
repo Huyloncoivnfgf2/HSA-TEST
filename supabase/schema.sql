@@ -122,6 +122,30 @@ create table if not exists public.exam_submissions (
 alter table public.exam_submissions
   add column if not exists exam_version integer;
 
+create table if not exists public.content_reports (
+  id uuid primary key default gen_random_uuid(),
+  reporter_id uuid not null references auth.users(id) on delete cascade,
+  reporter_email text,
+  exam_id uuid not null references public.exams(id) on delete cascade,
+  exam_title text not null,
+  exam_version integer,
+  question_number integer not null check (question_number >= 1),
+  page_number integer check (page_number is null or page_number >= 1),
+  component text not null check (component in ('question', 'answer_key', 'solution', 'pdf', 'other')),
+  category text not null check (category in ('wrong_answer', 'missing_or_wrong_content', 'typo_formula_image', 'wrong_or_missing_solution', 'pdf_error', 'other')),
+  description text not null check (char_length(btrim(description)) >= 1),
+  status text not null default 'pending' check (status in ('pending', 'confirmed', 'needs_info', 'rejected', 'resolved', 'duplicate')),
+  owner_note text,
+  duplicate_of uuid references public.content_reports(id) on delete set null,
+  resolved_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists content_reports_active_unique
+  on public.content_reports (reporter_id, exam_id, question_number, category)
+  where status in ('pending', 'confirmed', 'needs_info');
+
 create table if not exists public.user_data (
   user_id uuid not null references auth.users(id) on delete cascade,
   key text not null,
@@ -144,6 +168,11 @@ $$;
 drop trigger if exists exams_set_updated_at on public.exams;
 create trigger exams_set_updated_at
 before update on public.exams
+for each row execute function public.set_exam_updated_at();
+
+drop trigger if exists content_reports_set_updated_at on public.content_reports;
+create trigger content_reports_set_updated_at
+before update on public.content_reports
 for each row execute function public.set_exam_updated_at();
 
 create or replace function public.is_admin()
@@ -202,6 +231,7 @@ alter table public.allowed_users enable row level security;
 alter table public.exams enable row level security;
 alter table public.exam_keys enable row level security;
 alter table public.exam_revisions enable row level security;
+alter table public.content_reports enable row level security;
 alter table public.exam_submissions enable row level security;
 alter table public.user_data enable row level security;
 
@@ -253,6 +283,22 @@ create policy "Admins can view exam revisions"
 drop policy if exists "Admins can add exam revisions" on public.exam_revisions;
 create policy "Admins can add exam revisions"
   on public.exam_revisions for insert to authenticated with check (public.is_admin());
+
+drop policy if exists "Allowed users can create content reports" on public.content_reports;
+create policy "Allowed users can create content reports"
+  on public.content_reports for insert to authenticated
+  with check (reporter_id = (select auth.uid()) and public.is_allowed());
+drop policy if exists "Users can read own or admin content reports" on public.content_reports;
+create policy "Users can read own or admin content reports"
+  on public.content_reports for select to authenticated
+  using (reporter_id = (select auth.uid()) or public.is_admin());
+drop policy if exists "Admins can update content reports" on public.content_reports;
+create policy "Admins can update content reports"
+  on public.content_reports for update to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+drop policy if exists "Admins can delete content reports" on public.content_reports;
+create policy "Admins can delete content reports"
+  on public.content_reports for delete to authenticated using (public.is_admin());
 
 drop policy if exists "Users can read own submissions" on public.exam_submissions;
 create policy "Users can read own submissions"
@@ -351,7 +397,7 @@ revoke all on function public.is_allowed() from public, anon;
 grant execute on function public.is_allowed() to authenticated;
 revoke all on function public.can_read_exam_file(text) from public, anon;
 grant execute on function public.can_read_exam_file(text) to authenticated;
-revoke all on public.admins, public.allowed_users, public.exams, public.exam_keys, public.exam_revisions, public.exam_submissions, public.user_data
+revoke all on public.admins, public.allowed_users, public.exams, public.exam_keys, public.exam_revisions, public.content_reports, public.exam_submissions, public.user_data
   from public, anon, authenticated;
 grant select on public.admins, public.allowed_users to authenticated;
 grant insert, delete on public.allowed_users to authenticated;
@@ -359,6 +405,7 @@ grant select (id, title, section, question_count, pdf_path, original_filename, f
   on public.exams to authenticated;
 grant insert, update, delete on public.exams to authenticated;
 grant select, insert on public.exam_revisions to authenticated;
+grant select, insert, update, delete on public.content_reports to authenticated;
 grant select on public.exam_submissions to authenticated;
 grant select, insert, update, delete on public.user_data to authenticated;
 
