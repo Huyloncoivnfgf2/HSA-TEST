@@ -39,6 +39,7 @@ interface HeaderProps {
   onSignOut: () => void;
   isAdmin: boolean;
   onOpenUsers: () => void;
+  onOpenProfile: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -62,6 +63,7 @@ export const Header: React.FC<HeaderProps> = ({
   onSignOut,
   isAdmin,
   onOpenUsers,
+  onOpenProfile,
 }) => {
   return (
     <header className="sticky top-0 z-40 w-full border-b border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md transition-colors">
@@ -239,10 +241,12 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </button>
           <div className="flex items-center gap-1 border-l border-slate-200 pl-2 dark:border-slate-700">
-            {user.user_metadata.avatar_url && <img src={user.user_metadata.avatar_url} alt="" className="h-7 w-7 rounded-full" />}
-            <span className="hidden max-w-28 truncate text-xs text-slate-600 dark:text-slate-300 sm:inline" title={user.user_metadata.full_name ?? user.email ?? ''}>
-              {user.user_metadata.full_name ?? user.email}
-            </span>
+            <button type="button" onClick={onOpenProfile} className="flex items-center gap-2 rounded-lg p-1 hover:bg-slate-100 dark:hover:bg-slate-800" title="Hồ sơ người học" aria-label="Mở hồ sơ người học">
+              {user.user_metadata.avatar_url && <img src={user.user_metadata.avatar_url} alt="" className="h-7 w-7 rounded-full" />}
+              <span className="hidden max-w-28 truncate text-xs text-slate-600 dark:text-slate-300 sm:inline" title={user.user_metadata.full_name ?? user.email ?? ''}>
+                {user.user_metadata.full_name ?? user.email}
+              </span>
+            </button>
             <button type="button" onClick={onSignOut} title="Đăng xuất" aria-label="Đăng xuất" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"><LogOut className="h-4 w-4" /></button>
           </div>
         </div>
