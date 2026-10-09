@@ -14,9 +14,11 @@ import {
 } from 'lucide-react';
 import { SUBJECT_CONFIGS } from '../types/hsa';
 import {
+  getPdfExamReadiness,
   parsePdfAnswerKey,
   type PdfExam,
   type PdfExamMode,
+  type PdfExamStatus,
   type PdfSubject,
 } from '../types/pdfExam';
 import {
@@ -43,8 +45,18 @@ interface NewPdfFile {
   subject: PdfSubject;
   title: string;
   questionCount: number;
+  pageStart?: number;
+  pageEnd?: number;
+  startQuestion: number;
   solutionFile?: File;
 }
+
+const examStatusLabels: Record<PdfExamStatus, string> = {
+  draft: 'Bản nháp',
+  verified: 'Đã xác minh',
+  approved: 'Đã duyệt',
+  archived: 'Đã lưu trữ',
+};
 
 interface PdfExamLibraryProps {
   onStart: (exam: PdfExam, mode: PdfExamMode, options?: { isContentTest?: boolean }) => void;
@@ -76,6 +88,10 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart, isAdmin
   const [error, setError] = useState<string | null>(null);
   const [editingExamId, setEditingExamId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
+  const [editingPageStart, setEditingPageStart] = useState('');
+  const [editingPageEnd, setEditingPageEnd] = useState('');
+  const [editingStartQuestion, setEditingStartQuestion] = useState('1');
+  const [editingStatus, setEditingStatus] = useState<PdfExamStatus>('draft');
   const [answerKeyExam, setAnswerKeyExam] = useState<PdfExam | null>(null);
   const [answerKeyDraft, setAnswerKeyDraft] = useState('');
   const [answerKeyRows, setAnswerKeyRows] = useState<Record<number, string>>({});
@@ -111,9 +127,11 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart, isAdmin
   }, [isAdmin]);
 
   const visibleExams = useMemo(
-    () => exams.filter((exam) => exam.subject === activeSubject)
+    () => exams
+      .filter((exam) => exam.subject === activeSubject)
+      .filter((exam) => isAdmin || (exam.status ?? 'approved') === 'approved')
       .sort((a, b) => b.createdAt - a.createdAt),
-    [activeSubject, exams]
+    [activeSubject, exams, isAdmin]
   );
 
   const addSelectedFiles = (fileList: FileList | null) => {
@@ -137,19 +155,20 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart, isAdmin
         subject: guessSubject(file.name),
         title: cleanTitle(file.name),
         questionCount: 50,
+        startQuestion: 1,
       })),
     ]);
   };
 
   const handleAnswerKeyPaste = (text: string, exam: PdfExam) => {
     setAnswerKeyDraft(text);
-    const result = parsePdfAnswerKey(text, exam.questionCount);
+    const result = parsePdfAnswerKey(text, exam.questionCount, exam.startQuestion ?? 1);
     setAnswerKeyRows(result.answers);
   };
 
   const saveAnswerKey = async () => {
     if (!answerKeyExam) return;
-    const result = parsePdfAnswerKey(answerKeyDraft, answerKeyExam.questionCount);
+    const result = parsePdfAnswerKey(answerKeyDraft, answerKeyExam.questionCount, answerKeyExam.startQuestion ?? 1);
     if (result.duplicates.length > 0) {
       setError(`Câu bị nhập trùng: ${result.duplicates.join(', ')}. Sửa chuỗi hoặc chỉnh đáp án trong bảng xem trước.`);
       return;
@@ -192,6 +211,12 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart, isAdmin
     if (newFiles.some((item) => !item.title.trim() || !Number.isSafeInteger(item.questionCount) || item.questionCount < 1 || item.questionCount > 5000)) {
       return setError('Tên đề không được để trống; số câu phải từ 1 đến 5000.');
     }
+    if (newFiles.some((item) => !Number.isSafeInteger(item.startQuestion) || item.startQuestion < 1)) {
+      return setError('Số câu bắt đầu phải từ 1 trở lên.');
+    }
+    if (newFiles.some((item) => (item.pageStart !== undefined && item.pageStart < 1) || (item.pageEnd !== undefined && item.pageEnd < (item.pageStart ?? 1)))) {
+      return setError('Khoảng trang chưa hợp lệ: trang kết thúc phải lớn hơn hoặc bằng trang bắt đầu.');
+    }
 
     setIsBusy(true);
     setError(null);
@@ -203,6 +228,12 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart, isAdmin
         createdAt: Date.now(),
         questionCount: item.questionCount,
         pdfFileName: item.file.name,
+        originalFileName: item.file.name,
+        pageStart: item.pageStart,
+        pageEnd: item.pageEnd,
+        startQuestion: item.startQuestion,
+        status: 'draft',
+        version: 1,
         pdfBlob: item.file,
         solutionFileName: item.solutionFile?.name,
         solutionBlob: item.solutionFile,
@@ -237,16 +268,32 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart, isAdmin
   const beginEdit = (exam: PdfExam) => {
     setEditingExamId(exam.id);
     setEditingTitle(exam.title);
+    setEditingPageStart(exam.pageStart ? String(exam.pageStart) : '');
+    setEditingPageEnd(exam.pageEnd ? String(exam.pageEnd) : '');
+    setEditingStartQuestion(String(exam.startQuestion ?? 1));
+    setEditingStatus(exam.status ?? 'approved');
     setError(null);
   };
 
   const saveEdit = async (exam: PdfExam) => {
     if (!editingTitle.trim()) return setError('Tên đề không được để trống.');
+    const pageStart = editingPageStart ? Number(editingPageStart) : undefined;
+    const pageEnd = editingPageEnd ? Number(editingPageEnd) : undefined;
+    const startQuestion = Number(editingStartQuestion);
+    if ((pageStart !== undefined && (!Number.isSafeInteger(pageStart) || pageStart < 1)) ||
+      (pageEnd !== undefined && (!Number.isSafeInteger(pageEnd) || pageEnd < (pageStart ?? 1))) ||
+      !Number.isSafeInteger(startQuestion) || startQuestion < 1) {
+      return setError('Khoảng trang hoặc số câu bắt đầu chưa hợp lệ.');
+    }
     setIsBusy(true);
     try {
       const updated: PdfExam = {
         ...exam,
         title: editingTitle.trim(),
+        pageStart,
+        pageEnd,
+        startQuestion,
+        status: editingStatus,
       };
       await savePdfExam(updated);
       if (updated.updatedAt) await updateCloudExamMetadata(updated);
@@ -262,7 +309,10 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart, isAdmin
   };
 
   const handleDelete = async (exam: PdfExam) => {
-    if (!window.confirm(`Xóa đề "${exam.title}" và toàn bộ lịch sử làm bài?`)) return;
+    const message = exam.updatedAt
+      ? `Lưu trữ đề "${exam.title}"? Đề sẽ ẩn khỏi thư viện; bài nộp trên cloud không bị xóa dây chuyền.`
+      : `Xóa đề "${exam.title}" khỏi thiết bị này?`;
+    if (!window.confirm(message)) return;
     try {
       if (exam.updatedAt) await deleteCloudExam(exam.id);
       else await deletePdfExam(exam.id);
@@ -450,6 +500,18 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart, isAdmin
                   <input type="number" min={1} max={5000} value={item.questionCount} onChange={(event) => updateNewFile(index, { questionCount: Number(event.target.value) })} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                 </label>
                 <label className="space-y-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                  Trang bắt đầu trong PDF (đề gộp)
+                  <input type="number" min={1} value={item.pageStart ?? ''} onChange={(event) => updateNewFile(index, { pageStart: event.target.value ? Number(event.target.value) : undefined })} placeholder="Để trống nếu đề riêng" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                </label>
+                <label className="space-y-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                  Trang kết thúc trong PDF (đề gộp)
+                  <input type="number" min={1} value={item.pageEnd ?? ''} onChange={(event) => updateNewFile(index, { pageEnd: event.target.value ? Number(event.target.value) : undefined })} placeholder="Để trống nếu đề riêng" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                </label>
+                <label className="space-y-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                  Số câu bắt đầu
+                  <input type="number" min={1} value={item.startQuestion} onChange={(event) => updateNewFile(index, { startQuestion: Number(event.target.value) })} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                </label>
+                <label className="space-y-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
                   Lời giải (PDF hoặc ảnh, không bắt buộc)
                   <input
                     type="file"
@@ -486,6 +548,25 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart, isAdmin
                   <label className="block space-y-1 text-xs font-semibold">Tên đề
                     <input value={editingTitle} onChange={(event) => setEditingTitle(event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                   </label>
+                  <div className="grid gap-3 sm:grid-cols-4">
+                    <label className="block space-y-1 text-xs font-semibold">Trang bắt đầu
+                      <input type="number" min={1} value={editingPageStart} onChange={(event) => setEditingPageStart(event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                    </label>
+                    <label className="block space-y-1 text-xs font-semibold">Trang kết thúc
+                      <input type="number" min={1} value={editingPageEnd} onChange={(event) => setEditingPageEnd(event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                    </label>
+                    <label className="block space-y-1 text-xs font-semibold">Câu bắt đầu
+                      <input type="number" min={1} value={editingStartQuestion} onChange={(event) => setEditingStartQuestion(event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                    </label>
+                    <label className="block space-y-1 text-xs font-semibold">Trạng thái đề
+                      <select value={editingStatus} onChange={(event) => setEditingStatus(event.target.value as PdfExamStatus)} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
+                        <option value="draft">Bản nháp</option>
+                        <option value="verified">Đã xác minh</option>
+                        <option value="approved">Đã duyệt</option>
+                        <option value="archived">Đã lưu trữ</option>
+                      </select>
+                    </label>
+                  </div>
                   <div className="flex gap-2">
                     <button type="button" onClick={() => void saveEdit(exam)} disabled={isBusy} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white">Lưu thay đổi</button>
                     <button type="button" onClick={() => setEditingExamId(null)} className="rounded-lg px-3 py-2 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-800">Hủy</button>
@@ -498,6 +579,11 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart, isAdmin
                     <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
                       <span>Thêm ngày {new Date(exam.createdAt).toLocaleDateString('vi-VN')}</span>
                       <span>{exam.questionCount} câu</span>
+                      <span>{examStatusLabels[exam.status ?? 'approved']}</span>
+                      <span>Đáp án: {getPdfExamReadiness(exam).answeredCount}/{exam.questionCount}</span>
+                      {exam.pageStart && <span>Trang {exam.pageStart}{exam.pageEnd ? `–${exam.pageEnd}` : ''}</span>}
+                      {(exam.startQuestion ?? 1) > 1 && <span>Từ câu {exam.startQuestion}</span>}
+                      {exam.version && <span>v{exam.version}</span>}
                       <span>Điểm cao nhất: {exam.bestScore === undefined ? '—' : `${exam.bestScore}/${exam.questionCount}`}</span>
                     </div>
                   </div>
@@ -533,7 +619,18 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart, isAdmin
               <div><h3 className="font-extrabold">Làm bài: {modeExam.title}</h3><p className="mt-1 text-xs text-slate-500">Đáp án chuẩn chỉ hiện sau khi nộp bài.</p></div>
               <button type="button" onClick={() => setModeExam(null)} aria-label="Đóng" className="rounded-lg p-1 hover:bg-slate-100 dark:hover:bg-slate-800"><X className="h-4 w-4" /></button>
             </div>
-            <div className="rounded-xl bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">Câu chưa có đáp án chuẩn sẽ được ghi nhận là chưa chấm và không tính vào điểm tối đa.</div>
+            {(() => {
+              const readiness = getPdfExamReadiness(modeExam);
+              return readiness.readyForNewAttempt ? (
+                <div className="rounded-xl bg-emerald-50 p-3 text-xs text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">Đề đã đủ điều kiện cho lượt thi mới.</div>
+              ) : (
+                <div className="rounded-xl bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                  <p className="font-bold">Chưa đủ điều kiện cho lượt thi mới:</p>
+                  <ul className="mt-1 list-disc pl-4">{readiness.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>
+                  {isAdmin && <p className="mt-1">Owner vẫn có thể bật Kiểm thử nội dung để kiểm tra đề.</p>}
+                </div>
+              );
+            })()}
             {isAdmin && (
               <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-slate-200 p-3 text-xs dark:border-slate-700">
                 <input type="checkbox" checked={contentTest} onChange={(event) => setContentTest(event.target.checked)} className="mt-0.5" />
@@ -541,8 +638,8 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart, isAdmin
               </label>
             )}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <button type="button" onClick={() => { setModeExam(null); onStart(modeExam, 'test', { isContentTest: contentTest }); }} className="rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-700">Kiểm tra · {SUBJECT_CONFIGS[modeExam.subject].durationMinutes} phút</button>
-              <button type="button" onClick={() => { setModeExam(null); onStart(modeExam, 'study', { isContentTest: contentTest }); }} className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">Ôn tập · không giới hạn giờ</button>
+              <button type="button" disabled={!contentTest && !getPdfExamReadiness(modeExam).readyForNewAttempt} onClick={() => { setModeExam(null); onStart(modeExam, 'test', { isContentTest: contentTest }); }} className="rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-40">Kiểm tra · {SUBJECT_CONFIGS[modeExam.subject].durationMinutes} phút</button>
+              <button type="button" disabled={!contentTest && !getPdfExamReadiness(modeExam).readyForNewAttempt} onClick={() => { setModeExam(null); onStart(modeExam, 'study', { isContentTest: contentTest }); }} className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:hover:bg-slate-800">Ôn tập · không giới hạn giờ</button>
             </div>
           </div>
         </div>
@@ -570,7 +667,7 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart, isAdmin
                 />
               </label>
               {(() => {
-                const diagnostics = parsePdfAnswerKey(answerKeyDraft, answerKeyExam.questionCount);
+                const diagnostics = parsePdfAnswerKey(answerKeyDraft, answerKeyExam.questionCount, answerKeyExam.startQuestion ?? 1);
                 return (
                   <div className="flex flex-wrap gap-2 text-[11px]">
                     <span className="rounded-lg bg-emerald-50 px-2 py-1 font-semibold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">Đã nhận {Object.keys(answerKeyRows).length}</span>
@@ -581,7 +678,7 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart, isAdmin
                 );
               })()}
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {Array.from({ length: answerKeyExam.questionCount }, (_, index) => index + 1).map((number) => (
+                {Array.from({ length: answerKeyExam.questionCount }, (_, index) => (answerKeyExam.startQuestion ?? 1) + index).map((number) => (
                   <label key={number} className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 text-xs ${answerKeyRows[number] ? 'border-emerald-200 dark:border-emerald-900' : 'border-slate-200 dark:border-slate-700'}`}>
                     <span className="w-8 shrink-0 font-bold">Câu {number}</span>
                     <input
