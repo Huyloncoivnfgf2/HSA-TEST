@@ -13,7 +13,10 @@ import {
   Flame,
   Brain,
   FileText,
+  LogOut,
+  Users,
 } from 'lucide-react';
+import type { User } from '@supabase/supabase-js';
 
 interface HeaderProps {
   darkMode: boolean;
@@ -32,6 +35,10 @@ interface HeaderProps {
   mistakeCount: number;
   streakDays: number;
   fsrsDueCount?: number;
+  user: User;
+  onSignOut: () => void;
+  isAdmin: boolean;
+  onOpenUsers: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -51,6 +58,10 @@ export const Header: React.FC<HeaderProps> = ({
   mistakeCount,
   streakDays,
   fsrsDueCount = 0,
+  user,
+  onSignOut,
+  isAdmin,
+  onOpenUsers,
 }) => {
   return (
     <header className="sticky top-0 z-40 w-full border-b border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md transition-colors">
@@ -191,6 +202,18 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="hidden lg:inline">Thư viện PDF</span>
           </button>
 
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={onOpenUsers}
+              className="flex items-center gap-1.5 rounded-xl px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+              title="Quản lý người dùng"
+            >
+              <Users className="h-4 w-4 text-indigo-500" />
+              <span className="hidden lg:inline">Người dùng</span>
+            </button>
+          )}
+
           {/* Google Drive sync button */}
           <button
             type="button"
@@ -215,6 +238,13 @@ export const Header: React.FC<HeaderProps> = ({
               <Moon className="w-5 h-5 text-slate-600" />
             )}
           </button>
+          <div className="flex items-center gap-1 border-l border-slate-200 pl-2 dark:border-slate-700">
+            {user.user_metadata.avatar_url && <img src={user.user_metadata.avatar_url} alt="" className="h-7 w-7 rounded-full" />}
+            <span className="hidden max-w-28 truncate text-xs text-slate-600 dark:text-slate-300 sm:inline" title={user.user_metadata.full_name ?? user.email ?? ''}>
+              {user.user_metadata.full_name ?? user.email}
+            </span>
+            <button type="button" onClick={onSignOut} title="Đăng xuất" aria-label="Đăng xuất" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"><LogOut className="h-4 w-4" /></button>
+          </div>
         </div>
       </div>
     </header>

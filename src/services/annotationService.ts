@@ -5,6 +5,7 @@ import {
   DrawingStroke,
   ScratchpadPageData,
 } from '../types/hsa';
+import { userStorage as localStorage } from './userStorage';
 
 const MEMORY_QUESTION_CACHE = new Map<string, QuestionAnnotationsData>();
 const MEMORY_GROUP_CACHE = new Map<string, GroupPassageAnnotationsData>();

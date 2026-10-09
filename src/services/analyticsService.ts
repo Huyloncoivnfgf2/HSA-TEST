@@ -9,6 +9,7 @@ import {
   DailyActivity,
   ErrorClassification,
 } from '../types/analytics';
+import { userStorage as localStorage } from './userStorage';
 
 const STORAGE_KEYS = {
   GOALS: 'hsa_user_goals_v2',

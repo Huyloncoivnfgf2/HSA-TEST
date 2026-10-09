@@ -48,6 +48,7 @@ import {
   savePdfExamSessionLocally,
   savePdfPageAnnotations,
 } from '../services/indexedDbService';
+import { getCloudSolutionUrl, saveCloudAnswerKey, submitCloudExam } from '../services/cloudExamService';
 import { ExamToolbar } from './ExamToolbar';
 import { ScratchpadDrawer } from './ScratchpadDrawer';
 
@@ -57,6 +58,7 @@ const PdfCanvasViewer = lazy(() =>
 
 interface PdfExamPlayerProps {
   examId: string;
+  isAdmin: boolean;
   initialPage?: number;
   onBack: () => void;
   onResultsChanged: (history: ExamRecord[], mistakes: MistakeEntry[]) => void;
@@ -143,6 +145,7 @@ export function createPdfExamRecord(
 
 export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
   examId,
+  isAdmin,
   initialPage,
   onBack,
   onResultsChanged,
@@ -201,12 +204,26 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
       loadPdfExamSession(),
       loadPdfPageAnnotations(examId),
       loadPdfExamScratchpad(examId),
-    ]).then(([exams, activeSession, savedAnnotations, savedScratchpad]) => {
+    ]).then(async ([exams, activeSession, savedAnnotations, savedScratchpad]) => {
       if (!mounted) return;
-      const foundExam = exams.find((item) => item.id === examId);
+      let foundExam = exams.find((item) => item.id === examId);
       if (!foundExam) {
         setLoadError('Không tìm thấy đề PDF này. Có thể đề đã bị xóa.');
         return;
+      }
+      const latestAttempt = [...foundExam.attempts]
+        .sort((first, second) => second.submittedAt - first.submittedAt)[0];
+      const submittedAnswers = activeSession?.examId === examId && activeSession.submitted
+        ? activeSession.answers
+        : !activeSession ? latestAttempt?.answers : undefined;
+      if (submittedAnswers && Object.keys(foundExam.answerKey).length === 0) {
+        const result = await submitCloudExam(examId, submittedAnswers);
+        foundExam = {
+          ...foundExam,
+          answerKey: result.answers,
+          solutionPath: result.solutionPath ?? undefined,
+        };
+        await savePdfExam(foundExam);
       }
       setExam(foundExam);
       const annotationsByPage: Record<number, PdfAnnotationStroke[]> = {};
@@ -300,7 +317,14 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
     submittingRef.current = true;
     setIsSubmitting(true);
     const submittedAt = Date.now();
-    const attempt: PdfExamAttempt = {
+    try {
+      const submission = await submitCloudExam(exam.id, currentSession.answers);
+      const submittedExam = {
+        ...exam,
+        answerKey: submission.answers,
+        solutionPath: submission.solutionPath ?? undefined,
+      };
+      const attempt: PdfExamAttempt = {
       id: crypto.randomUUID(),
       mode: currentSession.mode,
       answers: currentSession.answers,
@@ -311,25 +335,24 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
       questionPages: currentSession.questionPages,
       score: scorePdfAnswers(
         currentSession.answers,
-        exam.answerKey,
-        exam.questionCount,
-        exam.acceptedAnswers
+        submittedExam.answerKey,
+        submittedExam.questionCount,
+        submittedExam.acceptedAnswers
       ),
       submittedAt,
-    };
-    const updatedExam: PdfExam = {
-      ...exam,
+      };
+      const updatedExam: PdfExam = {
+      ...submittedExam,
       attempts: [...exam.attempts, attempt],
       bestScore: Math.max(exam.bestScore ?? 0, attempt.score),
-    };
-    const submittedSession: PdfExamSession = {
+      };
+      const submittedSession: PdfExamSession = {
       ...currentSession,
       attemptId: attempt.id,
       submitted: true,
       score: attempt.score,
       submittedAt,
-    };
-    try {
+      };
       await savePdfExam(updatedExam);
       await savePdfExamSession(submittedSession);
       setExam(updatedExam);
@@ -339,7 +362,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
       setStorageError(null);
     } catch (error) {
       console.error('Could not submit the PDF exam:', error);
-      setStorageError('Không thể lưu kết quả nộp bài. Bài làm vẫn còn trên màn hình; hãy thử nộp lại.');
+      setStorageError('Không thể gửi bài lên cloud hoặc lưu kết quả. Bài làm vẫn còn trên màn hình; hãy thử lại khi có mạng.');
     } finally {
       submittingRef.current = false;
       setIsSubmitting(false);
@@ -566,6 +589,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
     const nextSession = { ...session, score: currentAttempt.score };
     try {
       await savePdfExam(regradedExam);
+      if (isAdmin) await saveCloudAnswerKey(regradedExam);
       await savePdfExamSession(nextSession);
       setExam(regradedExam);
       setSession(nextSession);
@@ -582,11 +606,19 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
     }
   };
 
-  const openSolution = () => {
-    if (!session?.submitted || !exam?.solutionBlob) return;
-    const url = URL.createObjectURL(exam.solutionBlob);
-    window.open(url, '_blank', 'noopener,noreferrer');
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  const openSolution = async () => {
+    if (!session?.submitted || !exam) return;
+    try {
+      const url = exam.solutionBlob
+        ? URL.createObjectURL(exam.solutionBlob)
+        : exam.solutionPath ? await getCloudSolutionUrl(exam.solutionPath) : null;
+      if (!url) return;
+      window.open(url, '_blank', 'noopener,noreferrer');
+      if (exam.solutionBlob) window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (error) {
+      console.error('Could not open the solution file:', error);
+      setStorageError('Không thể mở lời giải. Kiểm tra kết nối rồi thử lại.');
+    }
   };
 
   const saveScratchpadPages = (index: number, strokes: DrawingStroke[]) => {
@@ -799,12 +831,12 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
               <Clock3 className="h-3.5 w-3.5" /> {formatRemainingTime(remainingTime)}
             </div>
           )}
-          {submitted && exam.solutionBlob && (
-            <button type="button" onClick={openSolution} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-2 text-xs font-bold hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800" title="Mở lời giải">
+          {submitted && (exam.solutionBlob || exam.solutionPath) && (
+            <button type="button" onClick={() => void openSolution()} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-2 text-xs font-bold hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800" title="Mở lời giải">
               <BookOpenCheck className="h-4 w-4" /><span className="hidden sm:inline">Lời giải</span>
             </button>
           )}
-          {submitted && (
+          {isAdmin && submitted && (
             <button
               type="button"
               onClick={() => {

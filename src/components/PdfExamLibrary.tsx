@@ -27,6 +27,14 @@ import {
   savePdfExam,
   savePdfExams,
 } from '../services/indexedDbService';
+import { userStorage as localStorage } from '../services/userStorage';
+import {
+  deleteCloudExam,
+  loadCloudExamLibrary,
+  saveCloudAnswerKey,
+  updateCloudExamMetadata,
+  uploadLocalExams,
+} from '../services/cloudExamService';
 
 const PDF_FILE_LIMIT = 30 * 1024 * 1024;
 
@@ -40,6 +48,7 @@ interface NewPdfFile {
 
 interface PdfExamLibraryProps {
   onStart: (exam: PdfExam, mode: PdfExamMode) => void;
+  isAdmin: boolean;
 }
 
 const subjects: Array<{ id: PdfSubject; label: string }> = [
@@ -59,7 +68,7 @@ function cleanTitle(fileName: string): string {
   return fileName.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ').trim();
 }
 
-export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart }) => {
+export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart, isAdmin }) => {
   const [exams, setExams] = useState<PdfExam[]>([]);
   const [activeSubject, setActiveSubject] = useState<PdfSubject>('math');
   const [newFiles, setNewFiles] = useState<NewPdfFile[]>([]);
@@ -72,6 +81,7 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart }) => {
   const [answerKeyRows, setAnswerKeyRows] = useState<Record<number, string>>({});
   const [modeExam, setModeExam] = useState<PdfExam | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<Record<string, string>>({});
   const [showBackupReminder, setShowBackupReminder] = useState(() => {
     const lastBackup = Number(localStorage.getItem('hsa_pdf_backup_reminder_v1') ?? 0);
     return !lastBackup || Date.now() - lastBackup > 7 * 24 * 60 * 60 * 1000;
@@ -79,18 +89,25 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart }) => {
   const pdfInput = useRef<HTMLInputElement>(null);
   const backupInput = useRef<HTMLInputElement>(null);
 
-  const reloadExams = async () => setExams(await loadPdfExams());
+  const reloadExams = async () => {
+    try {
+      setExams(await loadCloudExamLibrary(isAdmin));
+      setError(null);
+    } catch (loadError) {
+      console.error('Could not load cloud exams:', loadError);
+      setExams(await loadPdfExams());
+      setError('Không thể tải thư viện cloud; đang hiển thị đề đã lưu trên thiết bị.');
+    }
+  };
 
   useEffect(() => {
     let mounted = true;
-    loadPdfExams().then((data) => {
-      if (mounted) setExams(data);
-    }).catch((loadError: unknown) => {
+    void reloadExams().catch((loadError: unknown) => {
       console.error('Could not load the PDF exam library:', loadError);
-      if (mounted) setError('Không thể đọc thư viện PDF trong bộ nhớ trình duyệt.');
+      if (mounted) setError('Không thể đọc thư viện PDF cloud.');
     });
     return () => { mounted = false; };
-  }, []);
+  }, [isAdmin]);
 
   const visibleExams = useMemo(
     () => exams.filter((exam) => exam.subject === activeSubject)
@@ -139,7 +156,13 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart }) => {
     setIsBusy(true);
     setError(null);
     try {
-      await savePdfExam({ ...answerKeyExam, answerKey: answerKeyRows });
+      const updatedExam = { ...answerKeyExam, answerKey: answerKeyRows };
+      await savePdfExam(updatedExam);
+      if (updatedExam.updatedAt) {
+        await saveCloudAnswerKey(updatedExam);
+      } else {
+        await uploadLocalExams([updatedExam], () => undefined);
+      }
       await reloadExams();
       setAnswerKeyExam(null);
       setAnswerKeyDraft('');
@@ -187,10 +210,21 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart }) => {
         scrollLocked: false,
       }));
       await savePdfExams(created);
-      await reloadExams();
       setNewFiles([]);
       setIsAdding(false);
       if (pdfInput.current) pdfInput.current.value = '';
+      try {
+        await uploadLocalExams(created, (examId, state, message) => {
+          setUploadProgress((current) => ({
+            ...current,
+            [examId]: state === 'done' ? 'Đã tải lên' : state === 'uploading' ? 'Đang tải…' : `Lỗi: ${message ?? 'không xác định'}`,
+          }));
+        });
+      } catch (uploadError) {
+        console.error('Could not publish newly added PDF exams:', uploadError);
+        setError('Đề đã được lưu trên máy nhưng chưa tải lên cloud. Hãy thử lại bằng nút đẩy đề.');
+      }
+      await reloadExams();
     } catch (saveError) {
       console.error('Could not save PDF exams:', saveError);
       setError('Không thể lưu đề PDF. Hãy kiểm tra dung lượng lưu trữ khả dụng rồi thử lại.');
@@ -214,6 +248,7 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart }) => {
         title: editingTitle.trim(),
       };
       await savePdfExam(updated);
+      if (updated.updatedAt) await updateCloudExamMetadata(updated);
       await reloadExams();
       setEditingExamId(null);
       setError(null);
@@ -228,11 +263,34 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart }) => {
   const handleDelete = async (exam: PdfExam) => {
     if (!window.confirm(`Xóa đề "${exam.title}" và toàn bộ lịch sử làm bài?`)) return;
     try {
-      await deletePdfExam(exam.id);
+      if (exam.updatedAt) await deleteCloudExam(exam.id);
+      else await deletePdfExam(exam.id);
       await reloadExams();
     } catch (deleteError) {
       console.error('Could not delete the PDF exam:', deleteError);
       setError('Không thể xóa đề PDF.');
+    }
+  };
+
+  const handleUploadLocalExams = async () => {
+    setIsBusy(true);
+    setUploadProgress({});
+    setError(null);
+    try {
+      const localExams = await loadPdfExams();
+      const pendingExams = localExams.filter((exam) => !exam.updatedAt);
+      await uploadLocalExams(pendingExams, (examId, state, message) => {
+        setUploadProgress((current) => ({
+          ...current,
+          [examId]: state === 'done' ? 'Đã tải lên' : state === 'uploading' ? 'Đang tải…' : `Lỗi: ${message ?? 'không xác định'}`,
+        }));
+      });
+      await reloadExams();
+    } catch (uploadError) {
+      console.error('Could not upload local PDF exams:', uploadError);
+      setError('Không thể đẩy đề lên cloud.');
+    } finally {
+      setIsBusy(false);
     }
   };
 
@@ -287,7 +345,7 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart }) => {
             <span className="text-xs font-extrabold uppercase tracking-wider">Thư viện đề PDF</span>
           </div>
           <h2 className="text-2xl font-extrabold">Chọn phần thi</h2>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Tệp được lưu trên thiết bị, không tải lên máy chủ.</p>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Đề được lưu cục bộ và tải từ thư viện cloud.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={handleBackup} disabled={isBusy} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800">
@@ -297,6 +355,7 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart }) => {
             <RotateCcw className="h-4 w-4" /> Khôi phục
           </button>
           <input ref={backupInput} type="file" accept=".json,application/json" className="hidden" onChange={(event) => void handleRestore(event.target.files?.[0])} />
+          {isAdmin && <button type="button" onClick={() => void handleUploadLocalExams()} disabled={isBusy} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-50"><Upload className="h-4 w-4" /> Đẩy đề trên máy này lên cloud</button>}
         </div>
       </div>
 
@@ -330,17 +389,25 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart }) => {
 
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-lg font-bold">{subjects.find((subject) => subject.id === activeSubject)?.label}</h3>
-        <button
+        {isAdmin && <button
           type="button"
           onClick={() => { setIsAdding(!isAdding); setError(null); }}
           className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-emerald-700"
         >
           {isAdding ? <X className="h-4 w-4" /> : <FilePlus2 className="h-4 w-4" />}
-          {isAdding ? 'Đóng' : 'Thêm đề PDF'}
-        </button>
+          {isAdding ? 'Đóng' : 'Thêm đề'}
+        </button>}
       </div>
 
-      {isAdding && (
+      {Object.entries(uploadProgress).length > 0 && (
+        <div className="space-y-1 rounded-xl border border-slate-200 bg-white p-3 text-xs dark:border-slate-700 dark:bg-slate-900">
+          {Object.entries(uploadProgress).map(([examId, progress]) => (
+            <p key={examId}>{exams.find((exam) => exam.id === examId)?.title ?? examId}: {progress}</p>
+          ))}
+        </div>
+      )}
+
+      {isAdmin && isAdding && (
         <div className="space-y-4 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 dark:border-emerald-900 dark:bg-emerald-950/20">
           <div>
             <input
@@ -436,7 +503,7 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart }) => {
                   <div className="flex flex-wrap items-center gap-2">
                     <button type="button" onClick={() => setModeExam(exam)} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700"><Play className="h-3.5 w-3.5" /> Làm bài</button>
                     <button type="button" onClick={() => onStart(exam, 'review')} disabled={!exam.attempts?.length} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:hover:bg-slate-800"><BookOpen className="h-3.5 w-3.5" /> Xem lại</button>
-                    {!exam.attempts?.length && (
+                    {isAdmin && !exam.attempts?.length && (
                       <button
                         type="button"
                         onClick={() => {
@@ -448,8 +515,8 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart }) => {
                         className="rounded-lg border border-emerald-200 px-3 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-50 dark:border-emerald-900 dark:text-emerald-300 dark:hover:bg-emerald-950"
                       >Nhập đáp án đúng</button>
                     )}
-                    <button type="button" aria-label="Đổi tên đề" onClick={() => beginEdit(exam)} className="rounded-lg border border-slate-200 p-2 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"><Pencil className="h-4 w-4" /></button>
-                    <button type="button" aria-label="Xóa đề" onClick={() => void handleDelete(exam)} className="rounded-lg border border-rose-200 p-2 text-rose-600 hover:bg-rose-50 dark:border-rose-900 dark:hover:bg-rose-950"><Trash2 className="h-4 w-4" /></button>
+                    {isAdmin && <button type="button" aria-label="Đổi tên đề" onClick={() => beginEdit(exam)} className="rounded-lg border border-slate-200 p-2 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"><Pencil className="h-4 w-4" /></button>}
+                    {isAdmin && <button type="button" aria-label="Xóa đề" onClick={() => void handleDelete(exam)} className="rounded-lg border border-rose-200 p-2 text-rose-600 hover:bg-rose-50 dark:border-rose-900 dark:hover:bg-rose-950"><Trash2 className="h-4 w-4" /></button>}
                   </div>
                 </div>
               )}

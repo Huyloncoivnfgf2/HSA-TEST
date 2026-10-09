@@ -43,11 +43,13 @@ export interface PdfExam {
   title: string;
   subject: PdfSubject;
   createdAt: number;
+  updatedAt?: number;
   questionCount: number;
   pdfFileName: string;
   pdfBlob: Blob;
   solutionFileName?: string;
   solutionBlob?: Blob;
+  solutionPath?: string;
   answerKey: Record<number, string>;
   acceptedAnswers?: Record<number, string[]>;
   attempts: PdfExamAttempt[];

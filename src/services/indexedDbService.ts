@@ -3,11 +3,21 @@ import { ExamRecord } from '../types/analytics';
 import { FSRSCardData, normalizeCard } from './fsrsService';
 import { INITIAL_QUESTIONS } from '../data/sampleQuestions';
 import { encodeStrokesDelta, decodeStrokesDelta } from './annotationService';
+import {
+  getStorageUserId,
+  getUserStorageTimestamp,
+  getUserStorageValue,
+  setUserStorageTimestamp,
+  setUserStorageValue,
+} from './userStorage';
+import { userStorage as localStorage } from './userStorage';
+import { enqueueUserData } from './userDataSync';
 import type {
   PdfExam,
   PdfExamBackup,
   PdfExamScratchpad,
   PdfExamSession,
+  PdfAnnotationStroke,
   PdfPageAnnotations,
 } from '../types/pdfExam';
 
@@ -15,6 +25,41 @@ const DB_NAME = 'HSA_MASTER_DB_V4';
 const DB_VERSION = 4;
 
 let dbPromise: Promise<IDBDatabase> | null = null;
+
+export async function resetUserDatabase(): Promise<void> {
+  if (dbPromise) {
+    const db = await dbPromise.catch(() => null);
+    db?.close();
+    dbPromise = null;
+  }
+}
+
+export async function migrateAnonymousDatabase(): Promise<void> {
+  if (!getStorageUserId()) throw new Error('Cannot migrate local data before authentication');
+  if (!indexedDB.databases) return;
+  const existing = new Set((await indexedDB.databases()).map((database) => database.name));
+  const target = await getDb();
+  for (const sourceName of ['HSA_MASTER_DB_V4', `${DB_NAME}_anonymous`]) {
+    if (!existing.has(sourceName)) continue;
+    const source = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open(sourceName, DB_VERSION);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const storeNames = Array.from(source.objectStoreNames)
+      .filter((name) => target.objectStoreNames.contains(name));
+    for (const name of storeNames) {
+      const sourceTransaction = source.transaction(name, 'readonly');
+      const entries = await requestResult(sourceTransaction.objectStore(name).getAll());
+      if (!entries.length) continue;
+      const targetTransaction = target.transaction(name, 'readwrite');
+      const store = targetTransaction.objectStore(name);
+      entries.forEach((entry) => store.put(entry));
+      await transactionComplete(targetTransaction);
+    }
+    source.close();
+  }
+}
 
 function getDb(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise;
@@ -25,7 +70,7 @@ function getDb(): Promise<IDBDatabase> {
       return;
     }
 
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    const request = indexedDB.open(`${DB_NAME}_${getStorageUserId() ?? 'anonymous'}`, DB_VERSION);
 
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result;
@@ -117,6 +162,16 @@ export async function savePdfExam(exam: PdfExam): Promise<void> {
   transaction.objectStore('pdf_exams').put(exam);
   await transactionComplete(transaction);
   await requestPersistentStorage();
+  const syncKey = `pdf_attempts:${exam.id}`;
+  const result = {
+    attempts: exam.attempts,
+    bestScore: exam.bestScore,
+    updatedAt: Date.now(),
+  };
+  const serialized = JSON.stringify(result);
+  setUserStorageValue(`__cloud:${syncKey}`, serialized);
+  setUserStorageTimestamp(syncKey, Date.now());
+  enqueueUserData(syncKey, serialized);
 }
 
 export async function savePdfExams(exams: PdfExam[]): Promise<void> {
@@ -130,17 +185,47 @@ export async function savePdfExams(exams: PdfExam[]): Promise<void> {
 }
 
 export async function savePdfPageAnnotations(data: PdfPageAnnotations): Promise<void> {
+  const encoded = { ...data, strokes: encodeStrokesDelta(data.strokes) };
   const db = await getDb();
   const transaction = db.transaction('pdf_page_annotations', 'readwrite');
-  transaction.objectStore('pdf_page_annotations').put(data);
+  transaction.objectStore('pdf_page_annotations').put(encoded);
   await transactionComplete(transaction);
+  const syncKey = `pdf_annotation:${data.key}`;
+  const serialized = JSON.stringify(encoded);
+  setUserStorageValue(`__cloud:${syncKey}`, serialized);
+  setUserStorageTimestamp(syncKey, Date.now());
+  enqueueUserData(syncKey, serialized);
 }
 
 export async function loadPdfPageAnnotations(examId: string): Promise<PdfPageAnnotations[]> {
   const db = await getDb();
   const transaction = db.transaction('pdf_page_annotations', 'readonly');
   const store = transaction.objectStore('pdf_page_annotations');
-  return requestResult(store.index('examId').getAll(examId)) as Promise<PdfPageAnnotations[]>;
+  const local = await requestResult(store.index('examId').getAll(examId)) as PdfPageAnnotations[];
+  const merged = new Map(local.map((page) => [
+    page.key,
+    { ...page, strokes: decodeStrokesDelta(page.strokes) as PdfAnnotationStroke[] },
+  ]));
+  for (const key of localStorage.keys().filter((storageKey) => storageKey.startsWith('__cloud:pdf_annotation:'))) {
+    const serialized = getUserStorageValue(key);
+    if (!serialized) continue;
+    const annotation = JSON.parse(serialized) as PdfPageAnnotations;
+    if (annotation.examId === examId) {
+      merged.set(annotation.key, {
+        ...annotation,
+        strokes: decodeStrokesDelta(annotation.strokes) as PdfAnnotationStroke[],
+      });
+    }
+  }
+  const cacheTransaction = db.transaction('pdf_page_annotations', 'readwrite');
+  for (const page of merged.values()) {
+    cacheTransaction.objectStore('pdf_page_annotations').put({
+      ...page,
+      strokes: encodeStrokesDelta(page.strokes),
+    });
+  }
+  await transactionComplete(cacheTransaction);
+  return [...merged.values()];
 }
 
 export async function savePdfExamScratchpad(data: PdfExamScratchpad): Promise<void> {
@@ -148,13 +233,138 @@ export async function savePdfExamScratchpad(data: PdfExamScratchpad): Promise<vo
   const transaction = db.transaction('pdf_exam_scratchpads', 'readwrite');
   transaction.objectStore('pdf_exam_scratchpads').put(data);
   await transactionComplete(transaction);
+  const pages = [
+    ...data.globalPages.map((page, index) => ({
+      key: `pdf_scratchpad_page:${data.examId}:global:${page.id}`,
+      scope: 'global' as const,
+      index,
+      page,
+    })),
+    ...Object.entries(data.questionPages).flatMap(([questionNumber, questionPages]) =>
+      questionPages.map((page, index) => ({
+        key: `pdf_scratchpad_page:${data.examId}:question:${questionNumber}:${page.id}`,
+        scope: 'question' as const,
+        questionNumber: Number(questionNumber),
+        index,
+        page,
+      }))
+    ),
+  ];
+  const indexKey = `__local:pdf_scratchpad_index:${data.examId}`;
+  const oldKeys = new Set<string>([
+    ...(JSON.parse(getUserStorageValue(indexKey) ?? '[]') as string[]),
+    ...localStorage.keys()
+      .filter((key) => key.startsWith(`__cloud:pdf_scratchpad_page:${data.examId}:`))
+      .map((key) => key.slice('__cloud:'.length)),
+  ]);
+  const currentKeys = pages.map(({ key }) => key);
+  for (const key of [...oldKeys].filter((oldKey) => !currentKeys.includes(oldKey))) {
+    setUserStorageValue(`__cloud:${key}`, null);
+    setUserStorageTimestamp(key, Date.now());
+    enqueueUserData(key, null);
+  }
+  setUserStorageValue(indexKey, JSON.stringify(currentKeys));
+  for (const { page, ...metadata } of pages) {
+    const syncKey = metadata.key;
+    const serialized = JSON.stringify({
+      ...metadata,
+      page: { ...page, strokes: encodeStrokesDelta(page.strokes) },
+    });
+    setUserStorageValue(`__cloud:${syncKey}`, serialized);
+    setUserStorageTimestamp(syncKey, Date.now());
+    enqueueUserData(syncKey, serialized);
+  }
+  const stateKey = `pdf_scratchpad_state:${data.examId}`;
+  const state = JSON.stringify({
+    currentQuestionPages: data.currentQuestionPages,
+    currentGlobalPage: data.currentGlobalPage,
+  });
+  setUserStorageValue(`__cloud:${stateKey}`, state);
+  setUserStorageTimestamp(stateKey, Date.now());
+  enqueueUserData(stateKey, state);
 }
 
 export async function loadPdfExamScratchpad(examId: string): Promise<PdfExamScratchpad | null> {
   const db = await getDb();
   const transaction = db.transaction('pdf_exam_scratchpads', 'readonly');
   const data = await requestResult(transaction.objectStore('pdf_exam_scratchpads').get(examId));
-  return (data as PdfExamScratchpad | undefined) ?? null;
+  const result = (data as PdfExamScratchpad | undefined) ?? {
+    examId,
+    questionPages: {},
+    globalPages: [{
+      id: `pdf-global-${examId}-1`,
+      pageNumber: 1,
+      strokes: [],
+      bgPattern: 'grid' as const,
+    }],
+    currentQuestionPages: {},
+    currentGlobalPage: 0,
+  };
+  const cloudGlobal = new Map(result.globalPages.map((page) => [page.id, page]));
+  const cloudQuestions = new Map<number, Map<string, PdfExamScratchpad['globalPages'][number]>>();
+  const prefix = `__cloud:pdf_scratchpad_page:${examId}:`;
+  for (const key of localStorage.keys().filter((storageKey) => storageKey.startsWith(prefix))) {
+    const serialized = getUserStorageValue(key);
+    if (!serialized) continue;
+    const saved = JSON.parse(serialized) as {
+      scope: 'global' | 'question';
+      questionNumber?: number;
+      index: number;
+      page: PdfExamScratchpad['globalPages'][number];
+    };
+    const page = {
+      ...saved.page,
+      strokes: decodeStrokesDelta(saved.page.strokes),
+    };
+    if (saved.scope === 'global') cloudGlobal.set(page.id, page);
+    else {
+      const question = saved.questionNumber ?? 0;
+      if (!cloudQuestions.has(question)) cloudQuestions.set(question, new Map());
+      cloudQuestions.get(question)!.set(page.id, page);
+    }
+  }
+  const orderForPage = (scope: 'global' | 'question', questionNumber?: number) =>
+    new Map<string, number>(
+      localStorage.keys()
+        .filter((key) => key.startsWith(prefix))
+        .flatMap((key) => {
+          const serialized = getUserStorageValue(key);
+          if (!serialized) return [];
+          const saved = JSON.parse(serialized) as {
+            scope: 'global' | 'question';
+            questionNumber?: number;
+            index: number;
+            page: { id: string };
+          };
+          return saved.scope === scope && saved.questionNumber === questionNumber
+            ? [[saved.page.id, saved.index] as [string, number]]
+            : [];
+        })
+    );
+  const globalOrder = orderForPage('global');
+  const globalPages = [...cloudGlobal.values()].sort(
+    (first, second) => (globalOrder.get(first.id) ?? 0) - (globalOrder.get(second.id) ?? 0)
+  );
+  const questionPages: PdfExamScratchpad['questionPages'] = { ...result.questionPages };
+  for (const [question, pageMap] of cloudQuestions) {
+    const order = orderForPage('question', question);
+    questionPages[question] = [...pageMap.values()].sort(
+      (first, second) => (order.get(first.id) ?? 0) - (order.get(second.id) ?? 0)
+    );
+  }
+  const stateRaw = getUserStorageValue(`__cloud:pdf_scratchpad_state:${examId}`);
+  const state = stateRaw ? JSON.parse(stateRaw) as Pick<PdfExamScratchpad, 'currentQuestionPages' | 'currentGlobalPage'> : null;
+  const mergedData: PdfExamScratchpad = {
+    ...result,
+    globalPages,
+    questionPages,
+    currentQuestionPages: state?.currentQuestionPages ?? result.currentQuestionPages,
+    currentGlobalPage: state?.currentGlobalPage ?? result.currentGlobalPage,
+  };
+  const cacheTransaction = db.transaction('pdf_exam_scratchpads', 'readwrite');
+  cacheTransaction.objectStore('pdf_exam_scratchpads').put(mergedData);
+  await transactionComplete(cacheTransaction);
+  return mergedData;
 }
 
 export async function loadPdfExams(): Promise<PdfExam[]> {
@@ -343,9 +553,8 @@ export async function importApplicationBackup(file: File): Promise<void> {
     for (const value of restoredStores[name]) store.put(value);
   }
   await transactionComplete(transaction);
-  for (let i = localStorage.length - 1; i >= 0; i--) {
-    const key = localStorage.key(i);
-    if (key?.startsWith('hsa_')) localStorage.removeItem(key);
+  for (const key of localStorage.keys()) {
+    if (key.startsWith('hsa_')) localStorage.removeItem(key);
   }
   for (const [key, value] of Object.entries(backup.localStorage ?? {})) {
     if (key.startsWith('hsa_') && typeof value === 'string') localStorage.setItem(key, value);

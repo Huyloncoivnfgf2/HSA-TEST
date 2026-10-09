@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
+import type { User } from '@supabase/supabase-js';
 import {
   SubjectType,
   Question,
@@ -42,6 +43,9 @@ import {
   recordExamResult,
 } from './services/analyticsService';
 import { Header } from './components/Header';
+import { AuthGate } from './components/AuthGate';
+import { SyncIndicator } from './components/SyncIndicator';
+import { AllowedUsersModal } from './components/AllowedUsersModal';
 import { SubjectCard } from './components/SubjectCard';
 import { SubjectSelectorModal } from './components/SubjectSelectorModal';
 import { StudyMode } from './components/StudyMode';
@@ -69,6 +73,8 @@ import {
   savePdfExam,
   savePdfExamSession,
 } from './services/indexedDbService';
+import { submitCloudExam } from './services/cloudExamService';
+import { userStorage as localStorage } from './services/userStorage';
 import {
   Play,
   Sparkles,
@@ -118,7 +124,15 @@ function clusterQuestionsPreservingGroups(qs: Question[]): Question[] {
   return units.flatMap((u) => u.questions);
 }
 
-export default function App() {
+function AuthenticatedApp({
+  isAdmin,
+  user,
+  onSignOut,
+}: {
+  isAdmin: boolean;
+  user: User;
+  onSignOut: () => void;
+}) {
   // Theme state
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     const saved = localStorage.getItem('hsa_theme_mode');
@@ -170,7 +184,10 @@ export default function App() {
         const exam = (await loadPdfExams()).find((item) => item.id === session.examId);
         if (!exam) throw new Error('The PDF exam for the expired session is missing');
         const submittedAt = Date.now();
-        const score = scorePdfAnswers(session.answers, exam.answerKey, exam.questionCount);
+        const submission = await submitCloudExam(exam.id, session.answers);
+        exam.answerKey = submission.answers;
+        exam.solutionPath = submission.solutionPath ?? undefined;
+        const score = scorePdfAnswers(session.answers, submission.answers, exam.questionCount);
         const attempt: PdfExamAttempt = {
           id: crypto.randomUUID(),
           mode: session.mode === 'review' ? 'study' : session.mode,
@@ -219,6 +236,7 @@ export default function App() {
   const [isGoalsModalOpen, setIsGoalsModalOpen] = useState<boolean>(false);
   const [isMistakesModalOpen, setIsMistakesModalOpen] = useState<boolean>(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState<boolean>(false);
+  const [isAllowedUsersModalOpen, setIsAllowedUsersModalOpen] = useState(false);
 
   // Refresh analytics summary
   const analytics = useMemo(() => {
@@ -521,6 +539,10 @@ export default function App() {
         questionCount={questions.length}
         mistakeCount={mistakes.length}
         streakDays={streakDays}
+        user={user}
+        onSignOut={onSignOut}
+        isAdmin={isAdmin}
+        onOpenUsers={() => setIsAllowedUsersModalOpen(true)}
       />
 
       {/* Main Content Area */}
@@ -541,6 +563,7 @@ export default function App() {
         {view === 'pdf-exam' && activePdfExamId && (
           <PdfExamPlayer
             examId={activePdfExamId}
+            isAdmin={isAdmin}
             initialPage={activePdfPage}
             onBack={handleExitPdfExam}
             onResultsChanged={handlePdfResultsChanged}
@@ -757,7 +780,7 @@ export default function App() {
             </div>
 
             <div id="pdf-library">
-              <PdfExamLibrary onStart={(exam, mode) => void handleStartPdfExam(exam, mode)} />
+              <PdfExamLibrary isAdmin={isAdmin} onStart={(exam, mode) => void handleStartPdfExam(exam, mode)} />
             </div>
 
             {/* THREE BIG SCORE CARDS ON HOMEPAGE */}
@@ -951,6 +974,19 @@ export default function App() {
           // You can inspect history record
         }}
       />
+      {isAdmin && (
+        <AllowedUsersModal
+          isOpen={isAllowedUsersModalOpen}
+          onClose={() => setIsAllowedUsersModalOpen(false)}
+        />
+      )}
+      <SyncIndicator />
     </div>
   );
+}
+
+export default function App() {
+  return <AuthGate>{(user, isAdmin, onSignOut) => (
+    <AuthenticatedApp user={user} isAdmin={isAdmin} onSignOut={onSignOut} />
+  )}</AuthGate>;
 }

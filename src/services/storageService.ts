@@ -1,5 +1,6 @@
 import { Question, ExamSession, StudyProgress, SubjectType } from '../types/hsa';
 import { INITIAL_QUESTIONS } from '../data/sampleQuestions';
+import { userStorage as localStorage } from './userStorage';
 
 const STORAGE_KEYS = {
   QUESTIONS: 'hsa_question_bank_v1',
@@ -222,4 +223,3 @@ export function shuffleQuestionsPreservingGroups(questions: Question[]): Questio
 
   return chunks.flat();
 }
-
