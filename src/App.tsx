@@ -191,6 +191,7 @@ function AuthenticatedApp({
         const attempt: PdfExamAttempt = {
           id: crypto.randomUUID(),
           mode: session.mode === 'review' ? 'study' : session.mode,
+          isContentTest: session.isContentTest,
           answers: session.answers,
           startedAt: session.startedAt,
           answerModes: session.answerModes,
@@ -203,11 +204,11 @@ function AuthenticatedApp({
         const updatedExam = {
           ...exam,
           attempts: [...exam.attempts, attempt],
-          bestScore: Math.max(exam.bestScore ?? 0, score),
+          bestScore: session.isContentTest ? exam.bestScore : Math.max(exam.bestScore ?? 0, score),
         };
         await savePdfExam(updatedExam);
         await savePdfExamSession({ ...session, attemptId: attempt.id, submitted: true, score, submittedAt });
-        recordExamResult(createPdfExamRecord(updatedExam, attempt, updatedExam.answerKey, updatedExam.acceptedAnswers));
+        if (!session.isContentTest) recordExamResult(createPdfExamRecord(updatedExam, attempt, updatedExam.answerKey, updatedExam.acceptedAnswers));
         setExamHistory(getExamHistory());
         setMistakes(getMistakeNotebook());
       } catch (error) {
@@ -251,10 +252,10 @@ function AuthenticatedApp({
     saveExamSession(session);
   };
 
-  const handleStartPdfExam = async (exam: PdfExam, mode: PdfExamMode) => {
+  const handleStartPdfExam = async (exam: PdfExam, mode: PdfExamMode, options?: { isContentTest?: boolean }) => {
     const savedSession = loadPdfSessionFromLocalStorage();
     if (savedSession && !savedSession.submitted) {
-      if (savedSession.examId === exam.id && savedSession.mode === mode) {
+      if (savedSession.examId === exam.id && savedSession.mode === mode && Boolean(savedSession.isContentTest) === Boolean(options?.isContentTest)) {
         setActivePdfExamId(exam.id);
         setView('pdf-exam');
         return;
@@ -270,6 +271,7 @@ function AuthenticatedApp({
           id: 'active',
           examId: exam.id,
           mode: 'review',
+          isContentTest: latestAttempt.isContentTest,
           answers: latestAttempt.answers,
           attemptId: latestAttempt.id,
           answerModes: latestAttempt.answerModes ?? {},
@@ -286,6 +288,7 @@ function AuthenticatedApp({
           id: 'active',
           examId: exam.id,
           mode,
+          isContentTest: Boolean(options?.isContentTest),
           answers: {},
           answerModes: {},
           flaggedQuestions: {},
