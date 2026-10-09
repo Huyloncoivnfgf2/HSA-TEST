@@ -51,6 +51,7 @@ import {
 } from '../services/indexedDbService';
 import { getCloudSolutionUrl, saveCloudAnswerKey, submitCloudExam } from '../services/cloudExamService';
 import { ExamToolbar } from './ExamToolbar';
+import { PdfContentReportModal } from './PdfContentReportModal';
 import { ScratchpadDrawer } from './ScratchpadDrawer';
 
 const PdfCanvasViewer = lazy(() =>
@@ -176,6 +177,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
   const [answerKeyDraft, setAnswerKeyDraft] = useState('');
   const [answerKeyRows, setAnswerKeyRows] = useState<Record<number, string>>({});
   const [appealQuestion, setAppealQuestion] = useState<number | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
   const savingAnswersTimer = useRef<number | undefined>(undefined);
   const submittingRef = useRef(false);
   const gridQuestionRefs = useRef(new Map<number, HTMLButtonElement>());
@@ -784,6 +786,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
       <div ref={responseRef} className="shrink-0 border-t border-slate-200 p-3 dark:border-slate-800">
         <div className="mb-2 flex items-center justify-between gap-2 text-xs font-bold">
           <span>Câu {selectedQuestion}</span>
+          <button type="button" onClick={() => setReportOpen(true)} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-bold text-amber-700 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950"><Flag className="h-3.5 w-3.5" /> Báo lỗi</button>
           {!submitted && (
             <div className="flex items-center gap-1">
               <button type="button" onClick={() => toggleFlag(selectedQuestion)} className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 ${session.flaggedQuestions[selectedQuestion] ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' : 'hover:bg-slate-100 dark:hover:bg-slate-800'}`}><Flag className="h-3.5 w-3.5" /> Cờ</button>
@@ -960,6 +963,16 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
           </span>
           <button type="button" onClick={onBack} className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 font-bold hover:bg-emerald-100 dark:hover:bg-emerald-900"><BookOpenCheck className="h-3.5 w-3.5" /> Về thư viện</button>
         </div>
+      )}
+
+      {reportOpen && (
+        <PdfContentReportModal
+          exam={exam}
+          questionNumber={selectedQuestion}
+          pageNumber={currentPage}
+          examVersion={session.examVersion ?? exam.version ?? 1}
+          onClose={() => setReportOpen(false)}
+        />
       )}
 
       {exam.subject !== 'literature' && (
