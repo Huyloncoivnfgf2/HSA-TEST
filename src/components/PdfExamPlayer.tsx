@@ -189,6 +189,12 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
     () => exam ? pdfQuestionNumbers(exam.questionCount, exam.startQuestion ?? 1) : [],
     [exam?.questionCount, exam?.startQuestion]
   );
+
+  useEffect(() => {
+    if (questionNumbers.length && !questionNumbers.includes(selectedQuestion)) {
+      setSelectedQuestion(questionNumbers[0]);
+    }
+  }, [questionNumbers, selectedQuestion]);
   const scratchpadPages = scratchpad
     ? globalScratchpadMode
       ? scratchpad.globalPages
@@ -270,6 +276,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
         id: 'active',
         examId,
         attemptId: latest.id,
+        examVersion: latest.examVersion ?? foundExam.version ?? 1,
         mode: 'review',
         answers: latest.answers,
         answerModes: latest.answerModes ?? {},
@@ -331,6 +338,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
       id: crypto.randomUUID(),
       mode: currentSession.mode,
       isContentTest: currentSession.isContentTest,
+      examVersion: currentSession.examVersion ?? exam.version ?? 1,
       answers: currentSession.answers,
       startedAt: currentSession.startedAt,
       answerModes: currentSession.answerModes,
@@ -341,7 +349,9 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
         currentSession.answers,
         submittedExam.answerKey,
         submittedExam.questionCount,
-        submittedExam.acceptedAnswers
+        submittedExam.acceptedAnswers,
+        [],
+        submittedExam.startQuestion ?? 1
       ),
       submittedAt,
       };
@@ -616,7 +626,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
   };
 
   const openSolution = async () => {
-    if (!session?.submitted || !exam) return;
+    if ((!session?.submitted && !isAdmin) || !exam) return;
     try {
       const url = exam.solutionBlob
         ? URL.createObjectURL(exam.solutionBlob)
@@ -697,12 +707,16 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
   if (!exam || !session || !subject || !scratchpad) return <p className="p-12 text-center text-sm text-slate-500">Đang mở đề PDF…</p>;
 
   const submitted = session.submitted;
-  const scoreable = scoreablePdfQuestionCount(exam.answerKey, exam.questionCount);
+  const scoreable = scoreablePdfQuestionCount(exam.answerKey, exam.questionCount, exam.startQuestion ?? 1);
   const unscored = exam.questionCount - scoreable;
   const score = submitted
-    ? session.score ?? scorePdfAnswers(session.answers, exam.answerKey, exam.questionCount, exam.acceptedAnswers)
+    ? session.score ?? scorePdfAnswers(session.answers, exam.answerKey, exam.questionCount, exam.acceptedAnswers, [], exam.startQuestion ?? 1)
     : 0;
   const goal = getUserGoals()[exam.subject === 'math' ? 'targetMath' : exam.subject === 'literature' ? 'targetLiterature' : 'targetScience'];
+  const answeredCount = Object.values(session.answers).filter((answer) => answer.trim()).length;
+  const correctCount = submitted ? questionNumbers.filter((number) => isPdfAnswerCorrect(number, session.answers[number], exam.answerKey, exam.acceptedAnswers) === true).length : 0;
+  const wrongCount = submitted ? questionNumbers.filter((number) => isPdfAnswerCorrect(number, session.answers[number], exam.answerKey, exam.acceptedAnswers) === false).length : 0;
+  const timeSpentMinutes = session.submittedAt ? Math.max(0, Math.round((session.submittedAt - session.startedAt) / 60000)) : 0;
   const currentOutcome = submitted
     ? isPdfAnswerCorrect(
         selectedQuestion,
@@ -724,6 +738,13 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
         <div className="shrink-0 border-b border-emerald-200 bg-emerald-50 px-4 py-3 dark:border-emerald-900 dark:bg-emerald-950/30">
           <div className="text-lg font-extrabold text-emerald-700 dark:text-emerald-300">Điểm: {score}/{scoreable}</div>
           <p className="text-xs text-slate-600 dark:text-slate-400">Đúng 1 điểm/câu{unscored ? ` · ${unscored} câu chưa có đáp án chuẩn, không tính điểm` : ''}</p>
+          <div className="mt-2 grid grid-cols-2 gap-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+            <span>Đúng: {correctCount}</span>
+            <span>Sai/bỏ trống: {wrongCount}</span>
+            <span>Đã trả lời: {answeredCount}/{exam.questionCount}</span>
+            <span>Thời gian: {timeSpentMinutes} phút</span>
+          </div>
+          {session.examVersion && <p className="mt-1 text-[11px] text-slate-500">Phiên bản đề: v{session.examVersion}</p>}
         </div>
       )}
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
@@ -840,7 +861,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
               <Clock3 className="h-3.5 w-3.5" /> {formatRemainingTime(remainingTime)}
             </div>
           )}
-          {submitted && (exam.solutionBlob || exam.solutionPath) && (
+          {(submitted || isAdmin) && (exam.solutionBlob || exam.solutionPath) && (
             <button type="button" onClick={() => void openSolution()} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-2 text-xs font-bold hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800" title="Mở lời giải">
               <BookOpenCheck className="h-4 w-4" /><span className="hidden sm:inline">Lời giải</span>
             </button>
