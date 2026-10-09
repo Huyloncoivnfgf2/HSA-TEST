@@ -37,6 +37,8 @@ interface PdfCanvasViewerProps {
   onErasePageStroke?: (pageNumber: number, strokeId: string) => void;
   onCurrentPageChange?: (pageNumber: number) => void;
   requestedPage?: number;
+  pageStart?: number;
+  pageEnd?: number;
 }
 
 export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({
@@ -60,6 +62,8 @@ export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({
   onErasePageStroke,
   onCurrentPageChange,
   requestedPage,
+  pageStart,
+  pageEnd,
 }) => {
   const [document, setDocument] = useState<pdfjs.PDFDocumentProxy | null>(null);
   const [pageCount, setPageCount] = useState(0);
@@ -101,6 +105,7 @@ export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({
       }
       setBaseAspectRatio(viewport.width / viewport.height);
       setPageCount(pdf.numPages);
+      setCurrentPage(Math.max(1, Math.floor(pageStart ?? 1)));
       setDocument(pdf);
     }).catch((error: unknown) => {
       if (!cancelled) {
@@ -238,15 +243,18 @@ export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({
     onZoomChange?.(nextZoom);
   }, [currentPage, onZoomChange]);
 
+  const firstVisiblePage = Math.max(1, Math.floor(pageStart ?? 1));
+  const lastVisiblePage = Math.max(firstVisiblePage, Math.min(pageCount || firstVisiblePage, Math.floor(pageEnd ?? pageCount ?? firstVisiblePage)));
+
   const goToPage = useCallback((page: number) => {
-    const safePage = Math.max(1, Math.min(pageCount, Math.floor(page)));
+    const safePage = Math.max(firstVisiblePage, Math.min(lastVisiblePage, Math.floor(page)));
     const element = pageRefs.current.get(safePage);
     if (element && scrollRef.current) {
       scrollRef.current.scrollTop += element.getBoundingClientRect().top - scrollRef.current.getBoundingClientRect().top;
       setCurrentPage(safePage);
       setPageInput(String(safePage));
     }
-  }, [pageCount, onCurrentPageChange]);
+  }, [firstVisiblePage, lastVisiblePage, onCurrentPageChange]);
 
   useEffect(() => {
     if (requestedPage && requestedPage !== currentPage) goToPage(requestedPage);
@@ -289,19 +297,22 @@ export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({
     };
   }, [scrollLocked, setZoomPreservingPosition, zoom]);
 
-  const pageNumbers = useMemo(() => Array.from({ length: pageCount }, (_, index) => index + 1), [pageCount]);
+  const pageNumbers = useMemo(
+    () => Array.from({ length: Math.max(0, lastVisiblePage - firstVisiblePage + 1) }, (_, index) => firstVisiblePage + index),
+    [firstVisiblePage, lastVisiblePage]
+  );
 
   return (
     <section className="relative flex h-full min-h-0 flex-col bg-slate-200 dark:bg-slate-950">
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-slate-300 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
         <div className="flex items-center gap-1">
-          <button type="button" onClick={() => goToPage(currentPage - 1)} disabled={currentPage <= 1} className="rounded-lg p-2 hover:bg-slate-100 disabled:opacity-40 dark:hover:bg-slate-800" aria-label="Trang trước"><ChevronLeft className="h-4 w-4" /></button>
+          <button type="button" onClick={() => goToPage(currentPage - 1)} disabled={currentPage <= firstVisiblePage} className="rounded-lg p-2 hover:bg-slate-100 disabled:opacity-40 dark:hover:bg-slate-800" aria-label="Trang trước"><ChevronLeft className="h-4 w-4" /></button>
           <span className="text-xs font-semibold">Trang</span>
           <input
             aria-label="Số trang"
             type="number"
-            min={1}
-            max={pageCount}
+            min={firstVisiblePage}
+            max={lastVisiblePage}
             value={pageInput}
             onChange={(event) => setPageInput(event.target.value)}
             onBlur={() => goToPage(Number(pageInput) || currentPage)}
@@ -311,7 +322,7 @@ export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({
             className="w-14 rounded-md border border-slate-300 bg-white px-1.5 py-1 text-center text-xs dark:border-slate-700 dark:bg-slate-800"
           />
           <span className="text-xs font-semibold">/{pageCount || 0}</span>
-          <button type="button" onClick={() => goToPage(currentPage + 1)} disabled={currentPage >= pageCount} className="rounded-lg p-2 hover:bg-slate-100 disabled:opacity-40 dark:hover:bg-slate-800" aria-label="Trang sau"><ChevronRight className="h-4 w-4" /></button>
+          <button type="button" onClick={() => goToPage(currentPage + 1)} disabled={currentPage >= lastVisiblePage} className="rounded-lg p-2 hover:bg-slate-100 disabled:opacity-40 dark:hover:bg-slate-800" aria-label="Trang sau"><ChevronRight className="h-4 w-4" /></button>
         </div>
         <div className="flex items-center gap-1">
           <button type="button" onClick={() => setZoomPreservingPosition(zoom - 10)} disabled={zoom <= 50} className="rounded-lg p-2 hover:bg-slate-100 disabled:opacity-40 dark:hover:bg-slate-800" aria-label="Thu nhỏ"><Minus className="h-4 w-4" /></button>
