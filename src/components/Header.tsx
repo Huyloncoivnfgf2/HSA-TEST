@@ -15,6 +15,7 @@ import {
   FileText,
   LogOut,
   Users,
+  Flag,
 } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 
@@ -40,6 +41,7 @@ interface HeaderProps {
   isAdmin: boolean;
   onOpenUsers: () => void;
   onOpenProfile: () => void;
+  onOpenReports: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -64,6 +66,7 @@ export const Header: React.FC<HeaderProps> = ({
   isAdmin,
   onOpenUsers,
   onOpenProfile,
+  onOpenReports,
 }) => {
   return (
     <header className="sticky top-0 z-40 w-full border-b border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md transition-colors">
@@ -203,6 +206,18 @@ export const Header: React.FC<HeaderProps> = ({
             <FileText className="w-4 h-4 text-emerald-600" />
             <span className="hidden lg:inline">Thư viện PDF</span>
           </button>
+
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={onOpenReports}
+              className="flex items-center gap-1.5 rounded-xl px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+              title="Hàng đợi báo lỗi nội dung"
+            >
+              <Flag className="h-4 w-4 text-amber-500" />
+              <span className="hidden lg:inline">Báo lỗi</span>
+            </button>
+          )}
 
           {isAdmin && (
             <button
