@@ -767,14 +767,14 @@ function AuthenticatedApp({
                     <span>Thi thử toàn bộ (Toán → Văn → Khoa học)</span>
                   </button>
 
-                  <button
+                  {isAdmin && (<button
                     type="button"
                     onClick={() => setIsImportModalOpen(true)}
                     className="flex items-center gap-2 py-3.5 px-5 rounded-2xl bg-white/10 hover:bg-white/15 text-white font-bold text-sm backdrop-blur-xs border border-white/10 transition cursor-pointer"
                   >
                     <Sparkles className="w-4 h-4 text-emerald-300" />
                     <span>Nhập bằng AI (thử nghiệm)</span>
-                  </button>
+                  </button>)}
                 </div>
               </div>
             </div>
@@ -806,13 +806,13 @@ function AuthenticatedApp({
                   </p>
                 </div>
 
-                <button
+                {isAdmin && (<button
                   type="button"
                   onClick={() => setIsManagerModalOpen(true)}
                   className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline hidden sm:block"
                 >
                   Xem tất cả {questions.length} câu hỏi →
-                </button>
+                </button>)}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -917,30 +917,30 @@ function AuthenticatedApp({
       />
 
       {/* Data Import Modal (AI extraction & JSON backup) */}
-      <DataImportModal
+      {isAdmin && (<DataImportModal
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
         onSaveQuestions={handleSaveImportedQuestions}
         currentQuestions={questions}
-      />
+      />)}
 
-      {/* Question Bank Manager Modal */}
-      <QuestionManagerModal
+      {/* Question Bank Manager Modal (Owner only) */}
+      {isAdmin && (<QuestionManagerModal
         isOpen={isManagerModalOpen}
         onClose={() => setIsManagerModalOpen(false)}
         questions={questions}
         onUpdateQuestion={handleUpdateQuestion}
         onDeleteQuestion={handleDeleteQuestion}
         onResetDefault={handleResetQuestions}
-      />
+      />)}
 
-      {/* Google Drive Integration Modal */}
-      <GoogleDriveModal
+      {/* Google Drive Integration Modal (Owner only) */}
+      {isAdmin && (<GoogleDriveModal
         isOpen={isDriveModalOpen}
         onClose={() => setIsDriveModalOpen(false)}
         questions={questions}
         onImportQuestions={handleSaveImportedQuestions}
-      />
+      />)}
 
       {/* Goal Settings Modal */}
       <GoalSettingsModal
