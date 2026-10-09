@@ -188,11 +188,12 @@ function AuthenticatedApp({
         const submission = await submitCloudExam(exam.id, session.answers);
         exam.answerKey = submission.answers;
         exam.solutionPath = submission.solutionPath ?? undefined;
-        const score = scorePdfAnswers(session.answers, submission.answers, exam.questionCount);
+        const score = scorePdfAnswers(session.answers, submission.answers, exam.questionCount, exam.acceptedAnswers, [], exam.startQuestion ?? 1);
         const attempt: PdfExamAttempt = {
           id: crypto.randomUUID(),
           mode: session.mode === 'review' ? 'study' : session.mode,
           isContentTest: session.isContentTest,
+          examVersion: session.examVersion ?? exam.version ?? 1,
           answers: session.answers,
           startedAt: session.startedAt,
           answerModes: session.answerModes,
@@ -274,6 +275,7 @@ function AuthenticatedApp({
           examId: exam.id,
           mode: 'review',
           isContentTest: latestAttempt.isContentTest,
+          examVersion: latestAttempt.examVersion ?? exam.version ?? 1,
           answers: latestAttempt.answers,
           attemptId: latestAttempt.id,
           answerModes: latestAttempt.answerModes ?? {},
@@ -291,6 +293,7 @@ function AuthenticatedApp({
           examId: exam.id,
           mode,
           isContentTest: Boolean(options?.isContentTest),
+          examVersion: exam.version ?? 1,
           answers: {},
           answerModes: {},
           flaggedQuestions: {},
@@ -786,7 +789,7 @@ function AuthenticatedApp({
             </div>
 
             <div id="pdf-library">
-              <PdfExamLibrary isAdmin={isAdmin} onStart={(exam, mode) => void handleStartPdfExam(exam, mode)} />
+              <PdfExamLibrary isAdmin={isAdmin} onStart={(exam, mode, options) => void handleStartPdfExam(exam, mode, options)} />
             </div>
 
             {/* THREE BIG SCORE CARDS ON HOMEPAGE */}
