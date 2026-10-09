@@ -47,3 +47,9 @@ Loại thay đổi chốt:
 - [x] Cách khôi phục khi sửa nhầm (xác nhận trước, giữ file gốc).
 
 **Kết luận:** Cơ chế phiên bản ở mức nhẹ, đủ an toàn cho nhóm nhỏ. Sang Task 0.6.
+
+---
+**Ghi chú rà soát (2026-10-09) — phát hiện quan trọng, ghi nhận để sửa ở giai đoạn code:**
+1. Bảng `exam_submissions` hiện chỉ lưu **đáp án người học**, chưa lưu điểm/kết quả từng câu/ảnh chụp đáp án đúng tại thời điểm nộp. Nếu Owner sửa đáp án rồi người học mở lại bài cũ, hệ thống có nguy cơ hiểu lại bài cũ theo đáp án mới — trái với Nguyên tắc 1 ở trên. Muốn giữ đúng nguyên tắc, khi code cần lưu thêm kết quả chấm (đúng/sai từng câu hoặc điểm) ngay lúc nộp.
+2. Trong schema hiện tại, xóa 1 đề sẽ **xóa theo** bài nộp của đề đó (quan hệ xóa dây chuyền). Điều này lệch với Nguyên tắc 3 "không xóa cứng dữ liệu học tập". Hướng chốt: ưu tiên **ẩn/lưu trữ đề (xóa mềm)** thay vì xóa cứng; nếu vẫn xóa cứng thì phải cảnh báo rõ sẽ mất lịch sử làm bài của đề đó.
+3. Nhật ký chỉnh sửa (mục 3.2) chưa có bảng riêng trong schema — vẫn là việc cần bổ sung, chưa coi là đã xong.

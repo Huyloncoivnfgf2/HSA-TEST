@@ -11,7 +11,7 @@ Chốt cách tính điểm và cách người học nhìn thấy tiến bộ c�
 - Trắc nghiệm: đúng đáp án = 1, còn lại (sai/bỏ trống) = 0.
 - Câu điền số: so đáp án đã chuẩn hóa (ví dụ `12,5` = `12.5` khi so sánh nội bộ).
 - Điểm của một lần làm = số câu đúng của lần nộp đó. Không trừ điểm câu sai.
-- Tổng hợp 3 phần chỉ cộng khi người học làm đủ 3 phần trong cùng một đợt thi thử; bình thường xem điểm **theo từng phần**.
+- Mặc định xem điểm **theo từng phần**. Tổng điểm 3 phần chỉ tính khi hệ thống có khái niệm "một đợt thi thử" gom 3 lần nộp; hiện tại chưa có cơ chế gom đợt này, nên chưa hiển thị tổng 3 phần (ghi nhận là việc tương lai, không tính là đã có).
 
 ## 3. Người học nhìn thấy gì
 
@@ -50,3 +50,8 @@ Chốt cách tính điểm và cách người học nhìn thấy tiến bộ c�
 - [x] Nguyên tắc: chỉ tính bài đã nộp, mỗi người thấy của mình, không xếp hạng nhóm.
 
 **Kết luận:** Hệ thống điểm & tiến độ hoàn thành. Sang Task 0.8 (task cuối của Giai đoạn 0).
+
+---
+**Ghi chú rà soát (2026-10-09) — 2 điểm logic cần chốt khi code:**
+1. **Phân tích yếu theo môn trong phần Khoa học:** đề nằm trong PDF, hệ thống chỉ có đáp án theo số câu, nên muốn biết câu nào thuộc Lí/Hóa/Sinh/Sử/Địa thì phải có bảng phân bổ môn theo khoảng câu khi tạo đề Khoa học (ví dụ câu nào là môn nào). Chưa có bảng phân bổ này thì chỉ phân tích được theo phần, chưa theo môn — không coi là đã xong.
+2. **Điểm lịch sử phải bất biến:** giống ghi chú ở Task 0.5, phân tích/lịch sử cần dựa trên kết quả đã lưu lúc nộp; nếu tính lại bằng đáp án hiện tại thì Owner sửa đáp án sẽ làm số liệu cũ nhảy theo. Thống nhất: lưu kết quả chấm tại thời điểm nộp rồi mới phân tích trên kết quả đó.

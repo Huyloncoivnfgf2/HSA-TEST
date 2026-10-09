@@ -40,3 +40,6 @@
 - [x] Nguyên tắc không lộ đáp án và chống báo trùng.
 
 **Kết luận:** Thiết kế báo lỗi hoàn thành. Sang Task 0.7.
+
+---
+**Ghi chú rà soát (2026-10-09):** Đã kiểm tra schema: hiện **chưa có bảng báo lỗi riêng**. Nếu chỉ lưu báo lỗi trong dữ liệu riêng của từng người (`user_data`) thì Owner sẽ không đọc được báo lỗi của Learner (mỗi người chỉ đọc dữ liệu của mình). Chốt việc cần làm ở giai đoạn code: tạo bảng báo lỗi riêng, Owner và chính người báo đọc được; chống trùng bằng ràng buộc duy nhất theo (người báo, đề, số câu). Giao diện báo lỗi (ReportQuestionModal) đã có, phần lưu trữ/phân quyền là phần còn thiếu, không coi là đã hoàn thiện.

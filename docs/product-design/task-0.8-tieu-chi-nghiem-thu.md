@@ -31,7 +31,7 @@ Chốt "làm tới đâu thì được coi là xong và dùng được" cho từ
 - [ ] Hết giờ: bài tự nộp với đáp án đã điền.
 
 ### D. Nộp bài, đáp án và lời giải (từ 0.2, 0.4)
-- [ ] Trước khi nộp: không có cách nào từ giao diện xem được đáp án đúng.
+- [ ] Trước khi nộp: không xem được đáp án đúng từ giao diện, **và** thử gọi dữ liệu trực tiếp cũng bị máy chủ từ chối (bảng đáp án không cho Learner đọc, file lời giải chưa nộp thì không mở được).
 - [ ] Nộp xong: hiện điểm đúng với đáp án gốc (thử 1 đề đã biết trước đáp án), lưới câu xanh/đỏ khớp.
 - [ ] Sau khi nộp mới mở được file lời giải của đề đó; chưa nộp thì mở không được.
 - [ ] Câu điền số dạng `12,5` chấm đúng như `12.5`.
@@ -69,3 +69,6 @@ Giai đoạn 0 hoàn thành khi:
 - [x] Chốt định nghĩa hoàn thành của cả Giai đoạn 0.
 
 **Kết luận: Giai đoạn 0 — Thiết kế sản phẩm hoàn thành (0.1–0.8).** Các giai đoạn sau bám theo bộ tiêu chí này khi làm và khi test.
+
+---
+**Ghi chú rà soát (2026-10-09):** Danh sách A–H giữ nguyên trạng thái **chưa tích** — đây là tiêu chí để test ở giai đoạn code, không phải kết quả đã đạt. Khi test cần ghi dung sai cho mục E (ví dụ ±1 điểm % với bộ đề mẫu cố định gồm: 1 đề làm hôm qua, 1 đề làm 10 ngày trước, 1 đề chưa làm) thay vì đòi khớp tuyệt đối. Các mục đang phụ thuộc việc chưa làm (sửa lỗi "Invalid key", đề nhiều phần, rút đề, bảng báo lỗi) chỉ được tích khi đã thử thật trên web.

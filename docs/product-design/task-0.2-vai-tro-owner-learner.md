@@ -27,7 +27,7 @@ Không tạo thêm vai trò khác ở giai đoạn này (không có giáo viên/
 | Nhập / sửa đáp án đúng (exam key) | ✅ | ❌ | ❌ |
 | Xem/sửa danh sách người được duyệt | ✅ | ❌ | ❌ |
 | Làm bài, nộp bài | ✅ | ✅ | ❌ |
-| Xem đáp án đúng & file lời giải | Sau khi đã nộp bài đó | Sau khi đã nộp bài đó | ❌ |
+| Xem đáp án đúng & file lời giải | ✅ Bất cứ lúc nào (để quản lý đề) | Sau khi đã nộp bài đó | ❌ |
 | Xem điểm, lịch sử, Sổ lỗi, phân tích của **chính mình** | ✅ | ✅ | ❌ |
 | Xem dữ liệu học tập của người khác | Không (mỗi người chỉ thấy của mình) | ❌ | ❌ |
 | Báo lỗi nội dung đề | ✅ | ✅ | ❌ |
@@ -52,3 +52,6 @@ Không tạo thêm vai trò khác ở giai đoạn này (không có giáo viên/
 - [ ] (Kiểm tra thực tế ở giai đoạn test) Đăng nhập thử đủ 3 loại tài khoản.
 
 **Kết luận:** Thiết kế vai trò hoàn thành, khớp với phân quyền Supabase hiện có. Sang Task 0.3.
+
+---
+**Ghi chú rà soát (2026-10-09):** Đã đối chiếu trực tiếp `supabase/schema.sql`: `is_admin()`, `is_allowed()` và các chính sách RLS đúng như bảng quyền trên. Đã sửa 1 chỗ lệch trong bảng: Owner xem đáp án/lời giải bất cứ lúc nào (không phải chờ nộp) để còn kiểm tra đề. Lưu ý giữ nguyên lựa chọn thiết kế: Owner **không** xem điểm/lịch sử của Learner (mỗi tài khoản chỉ đọc bài nộp của mình theo RLS) — nếu sau này muốn Owner xem tiến độ nhóm thì phải đổi cả thiết kế lẫn RLS.

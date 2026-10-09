@@ -28,14 +28,14 @@ Chốt một đề thi được lưu như thế nào (file, phần thi, đáp á
 - Chỉ tải **1 file PDF duy nhất**, không cắt file.
 - Khi thêm đề, Owner nhập tay cho mỗi phần: trang bắt đầu – trang kết thúc; hệ thống hiện số trang + ảnh thu nhỏ các trang để Owner chọn đúng.
 - Mỗi phần là **một bản ghi đề riêng**, cùng trỏ về 1 file, kèm: trang bắt đầu/kết thúc của phần và "số câu bắt đầu" (ví dụ phần Văn bắt đầu từ câu 51 trong đáp án gốc).
-- Cần bổ sung vào bảng `exams`: `page_start`, `page_end`, `file_id` (và cập nhật schema.sql trước khi mở web dùng tính năng này).
+- Cần bổ sung vào bảng `exams`: `page_start`, `page_end`, `file_id`, `original_filename` và `start_question` (số câu bắt đầu của phần, mặc định 1) — cập nhật schema.sql trước khi mở web dùng tính năng này. Thống nhất `file_id` chính là định danh file trên cloud (cùng giá trị dùng cho `pdf_path`), không tạo hai đường dẫn khác nhau cho cùng một file.
 
 ## 4. Mô hình đáp án và chấm bài
 
 - Đáp án một đề = danh sách theo số câu: `{"1":"A","2":"C","3":"12,5",...}` lưu ở bảng riêng `exam_keys`.
 - Owner nhập đáp án bằng chuỗi nhanh dạng `1.A 2.C 3.12,5`; hệ thống phải chuẩn hóa (chấp nhận dấu phẩy thập phân kiểu Việt Nam) trước khi lưu.
 - Câu trắc nghiệm: 1 đáp án đúng. Câu điền số: so sánh theo giá trị đã chuẩn hóa.
-- Chấm bài chỉ chạy phía máy chủ khi nộp (`submit_exam()`): lưu bài nộp vào `exam_submissions`, rồi mới trả đáp án đúng + đường dẫn lời giải.
+- Khi nộp, máy chủ (`submit_exam()`) **ghi nhận bài nộp trước**, rồi mới trả đáp án đúng + đường dẫn lời giải; điểm hiển thị tính từ đáp án vừa trả đó. Điểm mấu chốt bảo mật là: không có bài nộp thì không lấy được đáp án (đúng với schema hiện tại, đã kiểm tra).
 - Đề **chưa có đáp án** thì: vẫn xem được ở chế độ luyện (nếu Owner cho phép), nhưng **không** được đưa vào rút đề Kiểm tra.
 
 ## 5. Mô hình bài nộp và lời giải
@@ -44,7 +44,7 @@ Chốt một đề thi được lưu như thế nào (file, phần thi, đáp á
 - Sổ lỗi và lịch ôn FSRS lấy dữ kiện từ bài nộp: câu nào sai, thuộc đề/phần nào.
 
 ## 6. Hiện trạng trong code (đã kiểm tra)
-- Đã có: `exams` (thiếu `page_start/page_end/file_id`, `original_filename`), `exam_keys`, `exam_submissions`, hàm nộp bài bảo vệ đáp án.
+- Đã có: `exams` (còn thiếu `page_start`, `page_end`, `file_id`, `original_filename`, `start_question`), `exam_keys`, `exam_submissions`, hàm nộp bài bảo vệ đáp án. Đã kiểm tra trực tiếp schema hiện tại để khẳng định các cột trên chưa tồn tại.
 - Đang kẹt: đẩy file lên cloud lỗi "Invalid key" do tên file tiếng Việt → sửa theo quy tắc tên ASCII ở mục 3.
 
 ## 7. Tiêu chí nghiệm thu Task 0.4
@@ -54,3 +54,6 @@ Chốt một đề thi được lưu như thế nào (file, phần thi, đáp á
 - [x] Mô hình đáp án, quy tắc chấm và điều kiện mở lời giải.
 
 **Kết luận:** Mô hình dữ liệu hoàn thành. Sang Task 0.5.
+
+---
+**Ghi chú rà soát (2026-10-09):** Đã đối chiếu schema thật: `exams` chưa có các cột của đề nhiều phần như liệt kê ở trên (không nói quá là đã có). Bổ sung `start_question` còn thiếu trong thiết kế cũ và thống nhất `file_id` = định danh file dùng cho `pdf_path`. Sửa cách diễn đạt chấm bài cho đúng hàm `submit_exam()` hiện tại.
