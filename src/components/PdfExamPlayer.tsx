@@ -20,6 +20,7 @@ import { SUBJECT_CONFIGS } from '../types/hsa';
 import {
   isPdfAnswerCorrect,
   parsePdfAnswerKey,
+  pdfQuestionNumbers,
   scorePdfAnswers,
   scoreablePdfQuestionCount,
   type PdfAnnotationStroke,
@@ -84,15 +85,17 @@ export function createPdfExamRecord(
   answerKey: Record<number, string>,
   acceptedAnswers: Record<number, string[]> = {}
 ): ExamRecord {
+  const startQuestion = exam.startQuestion ?? 1;
   const subjectScore = scorePdfAnswers(
     attempt.answers,
     answerKey,
     exam.questionCount,
     acceptedAnswers,
-    attempt.overriddenCorrect
+    attempt.overriddenCorrect,
+    startQuestion
   );
-  const scoreable = scoreablePdfQuestionCount(answerKey, exam.questionCount);
-  const details = Array.from({ length: exam.questionCount }, (_, index) => index + 1)
+  const scoreable = scoreablePdfQuestionCount(answerKey, exam.questionCount, startQuestion);
+  const details = Array.from({ length: exam.questionCount }, (_, index) => startQuestion + index)
     .filter((number) => !!answerKey[number])
     .map((number) => {
       const correct = isPdfAnswerCorrect(
@@ -183,8 +186,8 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
   const isEditable = !!session && (!session.submitted || session.mode === 'study');
   const lineWidth = strokeWidth === 'thin' ? 2 : strokeWidth === 'thick' ? 7 : 4;
   const questionNumbers = useMemo(
-    () => exam ? Array.from({ length: exam.questionCount }, (_, index) => index + 1) : [],
-    [exam?.questionCount]
+    () => exam ? pdfQuestionNumbers(exam.questionCount, exam.startQuestion ?? 1) : [],
+    [exam?.questionCount, exam?.startQuestion]
   );
   const scratchpadPages = scratchpad
     ? globalScratchpadMode
@@ -561,12 +564,12 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
 
   const handleAnswerKeyPaste = (text: string, questionCount: number) => {
     setAnswerKeyDraft(text);
-    setAnswerKeyRows(parsePdfAnswerKey(text, questionCount).answers);
+    setAnswerKeyRows(parsePdfAnswerKey(text, questionCount, exam?.startQuestion ?? 1).answers);
   };
 
   const saveCorrectedAnswerKey = async () => {
     if (!exam || !session?.submitted || !session.attemptId) return;
-    const diagnostics = parsePdfAnswerKey(answerKeyDraft, exam.questionCount);
+    const diagnostics = parsePdfAnswerKey(answerKeyDraft, exam.questionCount, exam.startQuestion ?? 1);
     if (diagnostics.duplicates.length > 0) {
       setStorageError(`Câu đáp án bị nhập trùng: ${diagnostics.duplicates.join(', ')}.`);
       return;
@@ -580,7 +583,8 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
         answerKeyRows,
         exam.questionCount,
         updatedExam.acceptedAnswers,
-        attempt.overriddenCorrect
+        attempt.overriddenCorrect,
+        exam.startQuestion ?? 1
       ),
     }));
     const regradedExam = {
@@ -911,6 +915,8 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
               onErasePageStroke={(pageNumber, strokeId) => updateStrokes(pageNumber, (annotations[pageNumber] ?? []).filter((stroke) => stroke.id !== strokeId))}
               onCurrentPageChange={onPageChange}
               requestedPage={currentPage}
+              pageStart={exam.pageStart}
+              pageEnd={exam.pageEnd}
             />
           </Suspense>
         </div>
@@ -963,7 +969,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
             <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
               <textarea value={answerKeyDraft} onChange={(event) => handleAnswerKeyPaste(event.target.value, exam.questionCount)} rows={4} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" placeholder="1.A 2.C 3.12,5" />
               {(() => {
-                const diagnostics = parsePdfAnswerKey(answerKeyDraft, exam.questionCount);
+                const diagnostics = parsePdfAnswerKey(answerKeyDraft, exam.questionCount, exam.startQuestion ?? 1);
                 return <p className="text-xs text-slate-500">Thiếu {diagnostics.missing.length} · trùng {diagnostics.duplicates.join(', ') || 'không'} · ngoài phạm vi {diagnostics.outOfRange.join(', ') || 'không'}</p>;
               })()}
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
