@@ -76,7 +76,9 @@ export const ExamHistoryModal: React.FC<ExamHistoryModalProps> = ({
                   <div className="space-y-1.5">
                     <div className="flex items-center gap-2">
                       <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300">
-                        {rec.mode === 'full-hsa' ? 'Thi toàn bộ HSA (3 phần)' : 'Kiểm tra môn tự chọn'}
+                        {rec.pdfExamTitle
+                          ? `Đề PDF: ${rec.pdfExamTitle}`
+                          : rec.mode === 'full-hsa' ? 'Thi toàn bộ HSA (3 phần)' : 'Kiểm tra môn tự chọn'}
                       </span>
                       <span className="text-xs text-slate-400 flex items-center gap-1">
                         <Calendar className="w-3.5 h-3.5" />

@@ -3,9 +3,16 @@ import { ExamRecord } from '../types/analytics';
 import { FSRSCardData, normalizeCard } from './fsrsService';
 import { INITIAL_QUESTIONS } from '../data/sampleQuestions';
 import { encodeStrokesDelta, decodeStrokesDelta } from './annotationService';
+import type {
+  PdfExam,
+  PdfExamBackup,
+  PdfExamScratchpad,
+  PdfExamSession,
+  PdfPageAnnotations,
+} from '../types/pdfExam';
 
 const DB_NAME = 'HSA_MASTER_DB_V4';
-const DB_VERSION = 2;
+const DB_VERSION = 4;
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -47,6 +54,23 @@ function getDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains('group_annotations')) {
         db.createObjectStore('group_annotations', { keyPath: 'key' });
       }
+      if (!db.objectStoreNames.contains('pdf_exams')) {
+        db.createObjectStore('pdf_exams', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('pdf_exam_sessions')) {
+        db.createObjectStore('pdf_exam_sessions', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('pdf_page_annotations')) {
+        const store = db.createObjectStore('pdf_page_annotations', { keyPath: 'key' });
+        store.createIndex('examId', 'examId');
+      }
+      const annotations = request.transaction?.objectStore('pdf_page_annotations');
+      if (annotations && !annotations.indexNames.contains('examId')) {
+        annotations.createIndex('examId', 'examId');
+      }
+      if (!db.objectStoreNames.contains('pdf_exam_scratchpads')) {
+        db.createObjectStore('pdf_exam_scratchpads', { keyPath: 'examId' });
+      }
     };
 
     request.onsuccess = () => resolve(request.result);
@@ -54,6 +78,279 @@ function getDb(): Promise<IDBDatabase> {
   });
 
   return dbPromise;
+}
+
+const PDF_SESSION_STORAGE_KEY = 'hsa_pdf_exam_session_v1';
+const PDF_BACKUP_STORES = [
+  'questions',
+  'exam_sets',
+  'active_session',
+  'exam_history',
+  'fsrs_cards',
+  'question_edits',
+  'question_annotations',
+  'group_annotations',
+  'pdf_exams',
+  'pdf_exam_sessions',
+  'pdf_page_annotations',
+  'pdf_exam_scratchpads',
+];
+
+function requestResult<T>(request: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed'));
+  });
+}
+
+function transactionComplete(transaction: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error ?? new Error('IndexedDB transaction failed'));
+    transaction.onabort = () => reject(transaction.error ?? new Error('IndexedDB transaction aborted'));
+  });
+}
+
+export async function savePdfExam(exam: PdfExam): Promise<void> {
+  const db = await getDb();
+  const transaction = db.transaction('pdf_exams', 'readwrite');
+  transaction.objectStore('pdf_exams').put(exam);
+  await transactionComplete(transaction);
+  await requestPersistentStorage();
+}
+
+export async function savePdfExams(exams: PdfExam[]): Promise<void> {
+  if (exams.length === 0) return;
+  const db = await getDb();
+  const transaction = db.transaction('pdf_exams', 'readwrite');
+  const store = transaction.objectStore('pdf_exams');
+  for (const exam of exams) store.put(exam);
+  await transactionComplete(transaction);
+  await requestPersistentStorage();
+}
+
+export async function savePdfPageAnnotations(data: PdfPageAnnotations): Promise<void> {
+  const db = await getDb();
+  const transaction = db.transaction('pdf_page_annotations', 'readwrite');
+  transaction.objectStore('pdf_page_annotations').put(data);
+  await transactionComplete(transaction);
+}
+
+export async function loadPdfPageAnnotations(examId: string): Promise<PdfPageAnnotations[]> {
+  const db = await getDb();
+  const transaction = db.transaction('pdf_page_annotations', 'readonly');
+  const store = transaction.objectStore('pdf_page_annotations');
+  return requestResult(store.index('examId').getAll(examId)) as Promise<PdfPageAnnotations[]>;
+}
+
+export async function savePdfExamScratchpad(data: PdfExamScratchpad): Promise<void> {
+  const db = await getDb();
+  const transaction = db.transaction('pdf_exam_scratchpads', 'readwrite');
+  transaction.objectStore('pdf_exam_scratchpads').put(data);
+  await transactionComplete(transaction);
+}
+
+export async function loadPdfExamScratchpad(examId: string): Promise<PdfExamScratchpad | null> {
+  const db = await getDb();
+  const transaction = db.transaction('pdf_exam_scratchpads', 'readonly');
+  const data = await requestResult(transaction.objectStore('pdf_exam_scratchpads').get(examId));
+  return (data as PdfExamScratchpad | undefined) ?? null;
+}
+
+export async function loadPdfExams(): Promise<PdfExam[]> {
+  const db = await getDb();
+  const transaction = db.transaction('pdf_exams', 'readonly');
+  return requestResult(transaction.objectStore('pdf_exams').getAll()) as Promise<PdfExam[]>;
+}
+
+export async function deletePdfExam(id: string): Promise<void> {
+  const db = await getDb();
+  const transaction = db.transaction(
+    ['pdf_exams', 'pdf_exam_sessions', 'pdf_page_annotations', 'pdf_exam_scratchpads'],
+    'readwrite'
+  );
+  transaction.objectStore('pdf_exams').delete(id);
+  const sessionStore = transaction.objectStore('pdf_exam_sessions');
+  const session = await requestResult(sessionStore.get('active')) as PdfExamSession | undefined;
+  if (session?.examId === id) {
+    sessionStore.delete('active');
+    localStorage.removeItem(PDF_SESSION_STORAGE_KEY);
+  }
+  const annotations = transaction.objectStore('pdf_page_annotations');
+  const pages = await requestResult(annotations.getAll()) as PdfPageAnnotations[];
+  pages.filter((page) => page.examId === id).forEach((page) => annotations.delete(page.key));
+  transaction.objectStore('pdf_exam_scratchpads').delete(id);
+  await transactionComplete(transaction);
+}
+
+export function loadPdfSessionFromLocalStorage(): PdfExamSession | null {
+  try {
+    const raw = localStorage.getItem(PDF_SESSION_STORAGE_KEY);
+    if (!raw) return null;
+    const session = JSON.parse(raw) as Partial<PdfExamSession>;
+    return {
+      ...session,
+      id: 'active',
+      answers: session.answers ?? {},
+      answerModes: session.answerModes ?? {},
+      flaggedQuestions: session.flaggedQuestions ?? {},
+      chapterLabels: session.chapterLabels ?? {},
+      questionPages: session.questionPages ?? {},
+      mode: session.mode ?? 'test',
+      submitted: session.submitted ?? false,
+      examId: session.examId ?? '',
+      startedAt: session.startedAt ?? Date.now(),
+      endsAt: session.endsAt ?? null,
+    };
+  } catch (error) {
+    console.error('Could not read the saved PDF exam session:', error);
+    return null;
+  }
+}
+
+export function savePdfExamSessionLocally(session: PdfExamSession): void {
+  localStorage.setItem(PDF_SESSION_STORAGE_KEY, JSON.stringify(session));
+}
+
+export async function savePdfExamSession(session: PdfExamSession | null): Promise<void> {
+  if (session) {
+    localStorage.setItem(PDF_SESSION_STORAGE_KEY, JSON.stringify(session));
+  } else {
+    localStorage.removeItem(PDF_SESSION_STORAGE_KEY);
+  }
+  const db = await getDb();
+  const transaction = db.transaction('pdf_exam_sessions', 'readwrite');
+  const store = transaction.objectStore('pdf_exam_sessions');
+  if (session) store.put(session);
+  else store.delete('active');
+  await transactionComplete(transaction);
+}
+
+export async function loadPdfExamSession(): Promise<PdfExamSession | null> {
+  const db = await getDb();
+  const transaction = db.transaction('pdf_exam_sessions', 'readonly');
+  const session = await requestResult(transaction.objectStore('pdf_exam_sessions').get('active'));
+  return session
+    ? loadPdfSessionFromLocalStorage() ?? session as PdfExamSession
+    : loadPdfSessionFromLocalStorage();
+}
+
+async function encodeBackupValue(value: unknown): Promise<unknown> {
+  if (value instanceof Blob) {
+    const data = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
+      reader.onerror = () => reject(reader.error ?? new Error('Could not read a file for backup'));
+      reader.readAsDataURL(value);
+    });
+    return { __hsaBlob: true, type: value.type, data };
+  }
+  if (Array.isArray(value)) return Promise.all(value.map(encodeBackupValue));
+  if (value && typeof value === 'object') {
+    const entries = await Promise.all(
+      Object.entries(value).map(async ([key, item]) => [key, await encodeBackupValue(item)] as const)
+    );
+    return Object.fromEntries(entries);
+  }
+  return value;
+}
+
+function decodeBackupValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(decodeBackupValue);
+  if (value && typeof value === 'object') {
+    const item = value as Record<string, unknown>;
+    if (item.__hsaBlob === true && typeof item.data === 'string' && typeof item.type === 'string') {
+      const binary = atob(item.data);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return new Blob([bytes], { type: item.type });
+    }
+    return Object.fromEntries(
+      Object.entries(item).map(([key, nested]) => [key, decodeBackupValue(nested)])
+    );
+  }
+  return value;
+}
+
+export async function exportApplicationBackup(): Promise<Blob> {
+  const db = await getDb();
+  const transaction = db.transaction(PDF_BACKUP_STORES, 'readonly');
+  const indexedDb: Record<string, unknown[]> = {};
+  await Promise.all(PDF_BACKUP_STORES.map(async (name) => {
+    indexedDb[name] = await requestResult(transaction.objectStore(name).getAll()) as unknown[];
+  }));
+  await transactionComplete(transaction);
+  const localStorageData: Record<string, string> = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key?.startsWith('hsa_')) localStorageData[key] = localStorage.getItem(key) ?? '';
+  }
+  const backup: PdfExamBackup = {
+    format: 'hsa-pdf-backup',
+    version: 1,
+    createdAt: Date.now(),
+    localStorage: localStorageData,
+    indexedDb: Object.fromEntries(
+      await Promise.all(
+        Object.entries(indexedDb).map(async ([name, values]) => [
+          name,
+          await encodeBackupValue(values) as unknown[],
+        ])
+      )
+    ),
+  };
+  return new Blob([JSON.stringify(backup)], { type: 'application/json' });
+}
+
+export async function importApplicationBackup(file: File): Promise<void> {
+  const parsed: unknown = JSON.parse(await file.text());
+  if (
+    !parsed ||
+    typeof parsed !== 'object' ||
+    (parsed as PdfExamBackup).format !== 'hsa-pdf-backup' ||
+    (parsed as PdfExamBackup).version !== 1 ||
+    !(parsed as PdfExamBackup).indexedDb ||
+    typeof (parsed as PdfExamBackup).indexedDb !== 'object'
+  ) {
+    throw new Error('Tệp sao lưu không hợp lệ hoặc không được hỗ trợ.');
+  }
+  const backup = parsed as PdfExamBackup;
+  if (
+    !backup.localStorage ||
+    typeof backup.localStorage !== 'object' ||
+    Array.isArray(backup.localStorage)
+  ) {
+    throw new Error('Tệp sao lưu thiếu dữ liệu lưu trữ hợp lệ.');
+  }
+  const restoredStores: Record<string, Array<Record<string, unknown>>> = {};
+  for (const name of PDF_BACKUP_STORES) {
+    const values = backup.indexedDb[name];
+    if (!Array.isArray(values)) throw new Error(`Tệp sao lưu thiếu dữ liệu "${name}".`);
+    const decoded = decodeBackupValue(values);
+    if (!Array.isArray(decoded) || !decoded.every((value) => (
+      value !== null && typeof value === 'object' && !Array.isArray(value)
+    ))) {
+      throw new Error(`Dữ liệu "${name}" trong tệp sao lưu không hợp lệ.`);
+    }
+    restoredStores[name] = decoded as Array<Record<string, unknown>>;
+  }
+  const db = await getDb();
+  const storeNames = PDF_BACKUP_STORES.filter((name) => db.objectStoreNames.contains(name));
+  const transaction = db.transaction(storeNames, 'readwrite');
+  for (const name of storeNames) {
+    const store = transaction.objectStore(name);
+    store.clear();
+    for (const value of restoredStores[name]) store.put(value);
+  }
+  await transactionComplete(transaction);
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const key = localStorage.key(i);
+    if (key?.startsWith('hsa_')) localStorage.removeItem(key);
+  }
+  for (const [key, value] of Object.entries(backup.localStorage ?? {})) {
+    if (key.startsWith('hsa_') && typeof value === 'string') localStorage.setItem(key, value);
+  }
+  await requestPersistentStorage();
 }
 
 /**
@@ -467,4 +764,3 @@ export async function loadGroupAnnotationIDB(key: string): Promise<any | null> {
     return null;
   }
 }
-

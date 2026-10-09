@@ -39,6 +39,7 @@ import {
   calculateStreakDays,
   calculateTopicStats,
   getWeakestTopics,
+  recordExamResult,
 } from './services/analyticsService';
 import { Header } from './components/Header';
 import { SubjectCard } from './components/SubjectCard';
@@ -53,6 +54,21 @@ import { SubjectAnalyticsView } from './components/SubjectAnalyticsView';
 import { GoalSettingsModal } from './components/GoalSettingsModal';
 import { MistakeNotebookModal } from './components/MistakeNotebookModal';
 import { ExamHistoryModal } from './components/ExamHistoryModal';
+import { PdfExamLibrary } from './components/PdfExamLibrary';
+import { createPdfExamRecord, PdfExamPlayer } from './components/PdfExamPlayer';
+import {
+  scorePdfAnswers,
+  type PdfExam,
+  type PdfExamAttempt,
+  type PdfExamMode,
+  type PdfExamSession,
+} from './types/pdfExam';
+import {
+  loadPdfExams,
+  loadPdfSessionFromLocalStorage,
+  savePdfExam,
+  savePdfExamSession,
+} from './services/indexedDbService';
 import {
   Play,
   Sparkles,
@@ -131,11 +147,62 @@ export default function App() {
   const [mistakes, setMistakes] = useState<MistakeEntry[]>(() => getMistakeNotebook());
 
   // Navigation view
-  const [view, setView] = useState<'home' | 'study' | 'exam' | 'analytics'>(() => {
+  const [view, setView] = useState<'home' | 'study' | 'exam' | 'analytics' | 'pdf-exam'>(() => {
+    const pdfSession = loadPdfSessionFromLocalStorage();
+    if (pdfSession && !pdfSession.submitted) return 'pdf-exam';
     const active = loadExamSession();
     if (active && !active.isFinished) return 'exam';
     return 'home';
   });
+  const [activePdfExamId, setActivePdfExamId] = useState<string | null>(
+    () => loadPdfSessionFromLocalStorage()?.examId ?? null
+  );
+  const [activePdfPage, setActivePdfPage] = useState<number | undefined>(undefined);
+
+  useEffect(() => {
+    if (view === 'pdf-exam') return;
+    let checking = false;
+    const checkExpiredPdfSession = async () => {
+      const session = loadPdfSessionFromLocalStorage();
+      if (checking || !session || session.submitted || !session.endsAt || session.endsAt > Date.now()) return;
+      checking = true;
+      try {
+        const exam = (await loadPdfExams()).find((item) => item.id === session.examId);
+        if (!exam) throw new Error('The PDF exam for the expired session is missing');
+        const submittedAt = Date.now();
+        const score = scorePdfAnswers(session.answers, exam.answerKey, exam.questionCount);
+        const attempt: PdfExamAttempt = {
+          id: crypto.randomUUID(),
+          mode: session.mode === 'review' ? 'study' : session.mode,
+          answers: session.answers,
+          startedAt: session.startedAt,
+          answerModes: session.answerModes,
+          flaggedQuestions: session.flaggedQuestions,
+          chapterLabels: session.chapterLabels,
+          questionPages: session.questionPages,
+          score,
+          submittedAt,
+        };
+        const updatedExam = {
+          ...exam,
+          attempts: [...exam.attempts, attempt],
+          bestScore: Math.max(exam.bestScore ?? 0, score),
+        };
+        await savePdfExam(updatedExam);
+        await savePdfExamSession({ ...session, attemptId: attempt.id, submitted: true, score, submittedAt });
+        recordExamResult(createPdfExamRecord(updatedExam, attempt, updatedExam.answerKey, updatedExam.acceptedAnswers));
+        setExamHistory(getExamHistory());
+        setMistakes(getMistakeNotebook());
+      } catch (error) {
+        console.error('Could not autosubmit the expired PDF exam:', error);
+      } finally {
+        checking = false;
+      }
+    };
+    void checkExpiredPdfSession();
+    const interval = window.setInterval(() => void checkExpiredPdfSession(), 1000);
+    return () => window.clearInterval(interval);
+  }, [view]);
 
   const [activeStudySubject, setActiveStudySubject] = useState<SubjectType>('math');
   const [selectedAnalyticsSubject, setSelectedAnalyticsSubject] = useState<SubjectType>('math');
@@ -164,6 +231,78 @@ export default function App() {
   const handleUpdateExamSession = (session: ExamSession) => {
     setExamSession(session);
     saveExamSession(session);
+  };
+
+  const handleStartPdfExam = async (exam: PdfExam, mode: PdfExamMode) => {
+    const savedSession = loadPdfSessionFromLocalStorage();
+    if (savedSession && !savedSession.submitted) {
+      if (savedSession.examId === exam.id && savedSession.mode === mode) {
+        setActivePdfExamId(exam.id);
+        setView('pdf-exam');
+        return;
+      }
+      if (!window.confirm('Bài PDF đang làm sẽ được thay bằng bài mới. Bạn có muốn tiếp tục?')) return;
+    }
+
+    const latestAttempt = [...exam.attempts].sort((a, b) => b.submittedAt - a.submittedAt)[0];
+    if (mode === 'review' && !latestAttempt) return;
+    const now = Date.now();
+    const session: PdfExamSession = mode === 'review' && latestAttempt
+      ? {
+          id: 'active',
+          examId: exam.id,
+          mode: 'review',
+          answers: latestAttempt.answers,
+          attemptId: latestAttempt.id,
+          answerModes: latestAttempt.answerModes ?? {},
+          flaggedQuestions: latestAttempt.flaggedQuestions ?? {},
+          chapterLabels: latestAttempt.chapterLabels ?? {},
+          questionPages: latestAttempt.questionPages ?? {},
+          startedAt: latestAttempt.submittedAt,
+          endsAt: null,
+          submitted: true,
+          score: latestAttempt.score,
+          submittedAt: latestAttempt.submittedAt,
+        }
+      : {
+          id: 'active',
+          examId: exam.id,
+          mode,
+          answers: {},
+          answerModes: {},
+          flaggedQuestions: {},
+          chapterLabels: {},
+          questionPages: {},
+          startedAt: now,
+          endsAt: mode === 'test'
+            ? now + SUBJECT_CONFIGS[exam.subject].durationMinutes * 60 * 1000
+            : null,
+          submitted: false,
+        };
+    try {
+      await savePdfExamSession(session);
+      setActivePdfExamId(exam.id);
+      setView('pdf-exam');
+    } catch (error) {
+      console.error('Could not start the PDF exam:', error);
+      window.alert('Không thể lưu phiên làm bài vào bộ nhớ trình duyệt.');
+    }
+  };
+
+  const handleExitPdfExam = () => {
+    const activeSession = loadPdfSessionFromLocalStorage();
+    if (activeSession?.submitted) {
+      void savePdfExamSession(null).catch((error: unknown) => {
+        console.error('Could not clear the completed PDF session:', error);
+      });
+      setActivePdfExamId(null);
+    }
+    setView('home');
+  };
+
+  const handlePdfResultsChanged = (history: ExamRecord[], nextMistakes: MistakeEntry[]) => {
+    setExamHistory(history);
+    setMistakes(nextMistakes);
   };
 
   const handleFinishExamSession = (session: ExamSession) => {
@@ -368,6 +507,10 @@ export default function App() {
         darkMode={darkMode}
         onToggleDarkMode={() => setDarkMode(!darkMode)}
         onOpenImport={() => setIsImportModalOpen(true)}
+        onOpenPdfLibrary={() => {
+          setView('home');
+          window.setTimeout(() => document.getElementById('pdf-library')?.scrollIntoView({ behavior: 'smooth' }), 0);
+        }}
         onOpenManager={() => setIsManagerModalOpen(true)}
         onOpenDrive={() => setIsDriveModalOpen(true)}
         onOpenMistakes={() => setIsMistakesModalOpen(true)}
@@ -392,6 +535,15 @@ export default function App() {
             onUpdateProgress={handleUpdateStudyProgress}
             customQuestions={customStudyQuestions}
             studyTitle={customStudyTitle}
+          />
+        )}
+
+        {view === 'pdf-exam' && activePdfExamId && (
+          <PdfExamPlayer
+            examId={activePdfExamId}
+            initialPage={activePdfPage}
+            onBack={handleExitPdfExam}
+            onResultsChanged={handlePdfResultsChanged}
           />
         )}
 
@@ -598,10 +750,14 @@ export default function App() {
                     className="flex items-center gap-2 py-3.5 px-5 rounded-2xl bg-white/10 hover:bg-white/15 text-white font-bold text-sm backdrop-blur-xs border border-white/10 transition cursor-pointer"
                   >
                     <Sparkles className="w-4 h-4 text-emerald-300" />
-                    <span>Tải file đề thi (AI tách câu hỏi)</span>
+                    <span>Nhập bằng AI (thử nghiệm)</span>
                   </button>
                 </div>
               </div>
+            </div>
+
+            <div id="pdf-library">
+              <PdfExamLibrary onStart={(exam, mode) => void handleStartPdfExam(exam, mode)} />
             </div>
 
             {/* THREE BIG SCORE CARDS ON HOMEPAGE */}
@@ -779,6 +935,11 @@ export default function App() {
         questions={questions}
         onStartMistakePractice={handleStartMistakePractice}
         onRefreshMistakes={() => setMistakes(getMistakeNotebook())}
+        onOpenPdfMistake={(examId, pageNumber) => {
+          setActivePdfExamId(examId);
+          setActivePdfPage(pageNumber);
+          setView('pdf-exam');
+        }}
       />
 
       {/* Exam History Modal */}

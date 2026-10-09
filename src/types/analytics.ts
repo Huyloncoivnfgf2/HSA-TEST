@@ -35,6 +35,9 @@ export interface QuestionAttemptDetail {
   timeSpentSeconds: number;
   errorType?: ErrorClassification;
   isStarred?: boolean;
+  pdfExamId?: string;
+  pdfExamTitle?: string;
+  pdfPageNumber?: number;
 }
 
 export interface ExamRecord {
@@ -47,6 +50,9 @@ export interface ExamRecord {
   timeSpentSeconds: number;
   details: QuestionAttemptDetail[];
   aiFeedback?: string;
+  pdfExamId?: string;
+  pdfExamTitle?: string;
+  pdfSubject?: SubjectType;
 }
 
 export interface TopicStat {
@@ -72,6 +78,9 @@ export interface MistakeEntry {
   wrongCount: number;
   correctStreak: number; // Removed from notebook when reaches 2
   lastErrorType?: ErrorClassification;
+  pdfExamId?: string;
+  pdfExamTitle?: string;
+  pdfPageNumber?: number;
 }
 
 export interface DailyActivity {

@@ -73,10 +73,47 @@ export function recordExamResult(record: ExamRecord): ExamRecord[] {
       detail.subSubject,
       detail.subTopic,
       detail.isCorrect,
-      detail.errorType
+      detail.errorType,
+      detail.pdfExamId
+        ? {
+            pdfExamId: detail.pdfExamId,
+            pdfExamTitle: detail.pdfExamTitle ?? '',
+            pdfPageNumber: detail.pdfPageNumber ?? 1,
+          }
+        : undefined
     );
   });
 
+  return updated;
+}
+
+export function replacePdfExamResult(record: ExamRecord): ExamRecord[] {
+  if (!record.pdfExamId) throw new Error('A PDF exam id is required to update a PDF result.');
+  const history = getExamHistory();
+  const updated = [record, ...history.filter((item) => item.id !== record.id)];
+  saveExamHistory(updated);
+
+  saveMistakeNotebook(getMistakeNotebook().filter((entry) => entry.pdfExamId !== record.pdfExamId));
+  updated
+    .filter((item) => item.pdfExamId === record.pdfExamId)
+    .sort((first, second) => first.date - second.date)
+    .forEach((examRecord) => {
+      examRecord.details.forEach((detail) => {
+        updateMistakeRecord(
+          detail.questionId,
+          detail.subject,
+          detail.subSubject,
+          detail.subTopic,
+          detail.isCorrect,
+          detail.errorType,
+          {
+            pdfExamId: record.pdfExamId!,
+            pdfExamTitle: record.pdfExamTitle ?? '',
+            pdfPageNumber: detail.pdfPageNumber ?? 1,
+          }
+        );
+      });
+  });
   return updated;
 }
 
@@ -112,7 +149,8 @@ export function updateMistakeRecord(
   subSubject: any,
   subTopic: string,
   isCorrect: boolean,
-  errorType?: ErrorClassification
+  errorType?: ErrorClassification,
+  pdfReference?: { pdfExamId: string; pdfExamTitle: string; pdfPageNumber: number }
 ): MistakeEntry[] {
   const notebook = getMistakeNotebook();
   const existingIndex = notebook.findIndex((m) => m.questionId === questionId);
@@ -129,6 +167,7 @@ export function updateMistakeRecord(
         lastWrongAt: now,
         correctStreak: 0,
         lastErrorType: errorType || updatedNotebook[existingIndex].lastErrorType,
+        ...(pdfReference ?? {}),
       };
     } else {
       updatedNotebook.push({
@@ -141,6 +180,7 @@ export function updateMistakeRecord(
         wrongCount: 1,
         correctStreak: 0,
         lastErrorType: errorType || 'sai kiến thức',
+        ...(pdfReference ?? {}),
       });
     }
   } else {
@@ -355,7 +395,9 @@ export function getAnalyticsSummary(practiceProgress?: any): AnalyticsSummary {
   (['math', 'literature', 'science'] as SubjectType[]).forEach((subj) => {
     // Filter exams containing this subject
     const subjectExams = history
-      .filter((h) => h.subjectScores && h.subjectScores[subj])
+      .filter((h) => h.subjectScores && h.subjectScores[subj] && (
+        !h.pdfExamId || h.pdfSubject === subj
+      ))
       .map((h) => h.subjectScores[subj].score);
 
     if (subjectExams.length > 0) {
@@ -496,4 +538,3 @@ export function regradeExamHistoryWithQuestion(updatedQuestion: Question): ExamR
 
   return updatedHistory;
 }
-

@@ -22,6 +22,7 @@ interface MistakeNotebookModalProps {
   questions: Question[];
   onStartMistakePractice: (mistakeQuestions: Question[]) => void;
   onRefreshMistakes: () => void;
+  onOpenPdfMistake?: (examId: string, pageNumber: number) => void;
 }
 
 export const MistakeNotebookModal: React.FC<MistakeNotebookModalProps> = ({
@@ -31,6 +32,7 @@ export const MistakeNotebookModal: React.FC<MistakeNotebookModalProps> = ({
   questions,
   onStartMistakePractice,
   onRefreshMistakes,
+  onOpenPdfMistake,
 }) => {
   const [selectedSubject, setSelectedSubject] = useState<SubjectType | 'all'>('all');
 
@@ -48,6 +50,9 @@ export const MistakeNotebookModal: React.FC<MistakeNotebookModalProps> = ({
 
   const filtered = enrichedMistakes.filter(
     (item) => selectedSubject === 'all' || item.question.subject === selectedSubject
+  );
+  const pdfMistakes = mistakes.filter((entry) =>
+    entry.pdfExamId && (selectedSubject === 'all' || entry.subject === selectedSubject)
   );
 
   const handleStartPractice = () => {
@@ -103,8 +108,9 @@ export const MistakeNotebookModal: React.FC<MistakeNotebookModalProps> = ({
                   : 'Khoa học';
               const count =
                 sub === 'all'
-                  ? enrichedMistakes.length
-                  : enrichedMistakes.filter((m) => m.question.subject === sub).length;
+                  ? enrichedMistakes.length + mistakes.filter((m) => !!m.pdfExamId).length
+                  : enrichedMistakes.filter((m) => m.question.subject === sub).length +
+                    mistakes.filter((m) => m.pdfExamId && m.subject === sub).length;
 
               return (
                 <button
@@ -137,7 +143,7 @@ export const MistakeNotebookModal: React.FC<MistakeNotebookModalProps> = ({
 
         {/* Content list */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
-          {filtered.length === 0 ? (
+          {filtered.length === 0 && pdfMistakes.length === 0 ? (
             <div className="text-center py-12 text-slate-400 space-y-3">
               <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto opacity-70" />
               <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
@@ -148,7 +154,8 @@ export const MistakeNotebookModal: React.FC<MistakeNotebookModalProps> = ({
               </p>
             </div>
           ) : (
-            filtered.map(({ entry, question }, idx) => (
+            <>
+            {filtered.map(({ entry, question }, idx) => (
               <div
                 key={entry.questionId}
                 className="p-5 rounded-2xl border border-rose-200 dark:border-rose-950/60 bg-white dark:bg-slate-900 shadow-xs space-y-3"
@@ -230,14 +237,46 @@ export const MistakeNotebookModal: React.FC<MistakeNotebookModalProps> = ({
                   </div>
                 )}
               </div>
-            ))
+            ))}
+            {pdfMistakes.map((entry, index) => {
+              const questionNumber = Number(entry.questionId.split(':').at(-1)) || 0;
+              return (
+                <article key={entry.questionId} className="rounded-2xl border border-rose-200 bg-white p-5 shadow-xs dark:border-rose-950/60 dark:bg-slate-900">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-lg bg-slate-100 px-2 py-0.5 text-xs font-bold dark:bg-slate-800">#{filtered.length + index + 1}</span>
+                        <span className="rounded-md bg-rose-500/10 px-2 py-0.5 text-xs font-semibold text-rose-600 dark:text-rose-400">{SUBJECT_CONFIGS[entry.subject].shortName}</span>
+                        <span className="text-xs text-slate-500">{entry.subTopic}</span>
+                      </div>
+                      <p className="text-sm font-bold">Câu {questionNumber} – {entry.pdfExamTitle} – trang {entry.pdfPageNumber ?? 1}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (entry.pdfExamId) {
+                            onOpenPdfMistake?.(entry.pdfExamId, entry.pdfPageNumber ?? 1);
+                            onClose();
+                          }
+                        }}
+                        className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700"
+                      >Mở đúng trang</button>
+                      <button type="button" onClick={() => handleRemoveOne(entry.questionId)} className="rounded-lg p-2 text-slate-400 hover:text-rose-600" title="Gỡ khỏi sổ lỗi"><Trash2 className="h-4 w-4" /></button>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-500">Sai hoặc bỏ trống {entry.wrongCount} lần</p>
+                </article>
+              );
+            })}
+            </>
           )}
         </div>
 
         {/* Footer */}
         <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50">
           <span className="text-xs text-slate-400">
-            Mỗi lần bạn ôn và trả lời đúng 2 lần liên tiếp, câu hỏi sẽ tự biến mất khỏi sổ lỗi.
+            Câu hỏi đã làm sai hoặc bỏ trống được lưu tại đây.
           </span>
           <button
             type="button"

@@ -12,12 +12,14 @@ import {
   Target,
   Flame,
   Brain,
+  FileText,
 } from 'lucide-react';
 
 interface HeaderProps {
   darkMode: boolean;
   onToggleDarkMode: () => void;
   onOpenImport: () => void;
+  onOpenPdfLibrary: () => void;
   onOpenManager: () => void;
   onOpenDrive: () => void;
   onOpenMistakes: () => void;
@@ -25,7 +27,7 @@ interface HeaderProps {
   onOpenGoals: () => void;
   onOpenFSRS?: () => void;
   onGoHome: () => void;
-  currentView: 'home' | 'study' | 'exam' | 'analytics' | 'fsrs-review';
+  currentView: 'home' | 'study' | 'exam' | 'analytics' | 'fsrs-review' | 'pdf-exam';
   questionCount: number;
   mistakeCount: number;
   streakDays: number;
@@ -36,6 +38,7 @@ export const Header: React.FC<HeaderProps> = ({
   darkMode,
   onToggleDarkMode,
   onOpenImport,
+  onOpenPdfLibrary,
   onOpenManager,
   onOpenDrive,
   onOpenMistakes,
@@ -170,10 +173,22 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             type="button"
             onClick={onOpenImport}
+            aria-label="Nhập bằng AI (thử nghiệm)"
+            title="Nhập bằng AI (thử nghiệm)"
             className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 transition"
           >
             <Sparkles className="w-4 h-4 text-emerald-500" />
-            <span className="hidden sm:inline">Nhập đề AI</span>
+            <span className="hidden xl:inline">Nhập bằng AI (thử nghiệm)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenPdfLibrary}
+            className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+            title="Thư viện đề PDF"
+          >
+            <FileText className="w-4 h-4 text-emerald-600" />
+            <span className="hidden lg:inline">Thư viện PDF</span>
           </button>
 
           {/* Google Drive sync button */}
