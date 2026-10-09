@@ -56,6 +56,7 @@ import { GoogleDriveModal } from './components/GoogleDriveModal';
 import { HomeScoreCards } from './components/HomeScoreCards';
 import { SubjectAnalyticsView } from './components/SubjectAnalyticsView';
 import { GoalSettingsModal } from './components/GoalSettingsModal';
+import { LearnerProfileModal } from './components/LearnerProfileModal';
 import { MistakeNotebookModal } from './components/MistakeNotebookModal';
 import { ExamHistoryModal } from './components/ExamHistoryModal';
 import { PdfExamLibrary } from './components/PdfExamLibrary';
@@ -238,6 +239,7 @@ function AuthenticatedApp({
   const [isMistakesModalOpen, setIsMistakesModalOpen] = useState<boolean>(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState<boolean>(false);
   const [isAllowedUsersModalOpen, setIsAllowedUsersModalOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
   // Refresh analytics summary
   const analytics = useMemo(() => {
@@ -546,6 +548,7 @@ function AuthenticatedApp({
         onSignOut={onSignOut}
         isAdmin={isAdmin}
         onOpenUsers={() => setIsAllowedUsersModalOpen(true)}
+        onOpenProfile={() => setIsProfileModalOpen(true)}
       />
 
       {/* Main Content Area */}
@@ -976,6 +979,16 @@ function AuthenticatedApp({
         onReviewExamRecord={(rec) => {
           // You can inspect history record
         }}
+      />
+      <LearnerProfileModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+        user={user}
+        isAdmin={isAdmin}
+        analytics={analytics}
+        history={examHistory}
+        mistakeCount={mistakes.length}
+        streakDays={streakDays}
       />
       {isAdmin && (
         <AllowedUsersModal
