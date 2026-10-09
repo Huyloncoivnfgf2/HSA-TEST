@@ -29,6 +29,7 @@ export interface PdfExamAttempt {
   id: string;
   mode: PdfExamMode;
   isContentTest?: boolean;
+  examVersion?: number;
   answers: Record<number, string>;
   score: number;
   submittedAt: number;
@@ -73,6 +74,7 @@ export interface PdfExamSession {
   attemptId?: string;
   mode: PdfExamMode;
   isContentTest?: boolean;
+  examVersion?: number;
   answers: Record<number, string>;
   answerModes: Record<number, PdfAnswerMode>;
   flaggedQuestions: Record<number, boolean>;
