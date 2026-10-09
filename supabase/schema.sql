@@ -115,8 +115,12 @@ create table if not exists public.exam_submissions (
   user_id uuid not null references auth.users(id) on delete cascade,
   exam_id uuid not null references public.exams(id) on delete cascade,
   answers jsonb not null check (jsonb_typeof(answers) = 'object'),
+  exam_version integer,
   submitted_at timestamptz not null default now()
 );
+
+alter table public.exam_submissions
+  add column if not exists exam_version integer;
 
 create table if not exists public.user_data (
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -298,8 +302,8 @@ begin
     raise exception 'Exam not found' using errcode = 'P0002';
   end if;
 
-  insert into public.exam_submissions(user_id, exam_id, answers)
-  values (v_user_id, $1, $2);
+  insert into public.exam_submissions(user_id, exam_id, answers, exam_version)
+  select v_user_id, $1, $2, version from public.exams where id = $1;
 
   select coalesce(keys.answers, '{}'::jsonb), exams.solution_path
     into v_answers, v_solution_path
