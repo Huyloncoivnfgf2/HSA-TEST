@@ -20,6 +20,13 @@ export type CloudExamRecord = {
   section: 'dinh_luong' | 'dinh_tinh' | 'khoa_hoc';
   question_count: number;
   pdf_path: string;
+  original_filename?: string | null;
+  file_id?: string | null;
+  page_start?: number | null;
+  page_end?: number | null;
+  start_question?: number | null;
+  status?: 'draft' | 'verified' | 'approved' | 'archived' | null;
+  version?: number | null;
   created_at: string;
   updated_at: string;
 };
