@@ -47,6 +47,64 @@ create table if not exists public.exams (
   updated_at timestamptz not null default now()
 );
 
+-- Giai đoạn 3: metadata quản lý đề. Các cột này được thêm kiểu if-not-exists để
+-- có thể chạy lại schema trên project đã có dữ liệu mà không mất đề cũ.
+alter table public.exams
+  add column if not exists original_filename text,
+  add column if not exists file_id text,
+  add column if not exists page_start integer,
+  add column if not exists page_end integer,
+  add column if not exists start_question integer not null default 1,
+  add column if not exists status text not null default 'draft',
+  add column if not exists version integer not null default 1,
+  add column if not exists approved_at timestamptz,
+  add column if not exists approved_by uuid references auth.users(id);
+
+-- Đề đã có trước khi có quy trình duyệt được coi là đã duyệt để không biến mất
+-- khỏi thư viện sau khi nâng cấp. Việc này chỉ chạy đúng một lần nhờ marker;
+-- chạy lại schema về sau sẽ không tự duyệt các đề draft mới.
+create table if not exists public.hsa_schema_markers (
+  key text primary key,
+  applied_at timestamptz not null default now()
+);
+alter table public.hsa_schema_markers enable row level security;
+do $$
+begin
+  if not exists (select 1 from public.hsa_schema_markers where key = 'phase3_existing_exams_approved_v1') then
+    update public.exams
+    set status = 'approved', approved_at = coalesce(approved_at, created_at)
+    where status = 'draft';
+    insert into public.hsa_schema_markers(key) values ('phase3_existing_exams_approved_v1');
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'exams_page_range_check') then
+    alter table public.exams add constraint exams_page_range_check
+      check ((page_start is null or page_start >= 1) and (page_end is null or page_end >= coalesce(page_start, 1)));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'exams_start_question_check') then
+    alter table public.exams add constraint exams_start_question_check check (start_question >= 1);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'exams_status_check') then
+    alter table public.exams add constraint exams_status_check
+      check (status in ('draft', 'verified', 'approved', 'archived'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'exams_version_check') then
+    alter table public.exams add constraint exams_version_check check (version >= 1);
+  end if;
+end $$;
+
+create table if not exists public.exam_revisions (
+  id uuid primary key default gen_random_uuid(),
+  exam_id uuid not null references public.exams(id) on delete cascade,
+  changed_by uuid references auth.users(id),
+  action text not null,
+  details jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists public.exam_keys (
   exam_id uuid primary key references public.exams(id) on delete cascade,
   answers jsonb not null check (jsonb_typeof(answers) = 'object')
@@ -139,6 +197,7 @@ alter table public.admins enable row level security;
 alter table public.allowed_users enable row level security;
 alter table public.exams enable row level security;
 alter table public.exam_keys enable row level security;
+alter table public.exam_revisions enable row level security;
 alter table public.exam_submissions enable row level security;
 alter table public.user_data enable row level security;
 
@@ -158,8 +217,10 @@ create policy "Admins can remove allowed users"
   on public.allowed_users for delete to authenticated using (public.is_admin());
 
 drop policy if exists "Authenticated users can read exams" on public.exams;
-create policy "Authenticated users can read exams"
-  on public.exams for select to authenticated using (public.is_allowed());
+drop policy if exists "Users can read approved exams" on public.exams;
+create policy "Users can read approved exams"
+  on public.exams for select to authenticated
+  using (public.is_admin() or (public.is_allowed() and status = 'approved'));
 drop policy if exists "Admins can insert exams" on public.exams;
 create policy "Admins can insert exams"
   on public.exams for insert to authenticated with check (public.is_admin());
@@ -181,6 +242,13 @@ create policy "Admins can update exam keys"
 drop policy if exists "Admins can delete exam keys" on public.exam_keys;
 create policy "Admins can delete exam keys"
   on public.exam_keys for delete to authenticated using (public.is_admin());
+
+drop policy if exists "Admins can view exam revisions" on public.exam_revisions;
+create policy "Admins can view exam revisions"
+  on public.exam_revisions for select to authenticated using (public.is_admin());
+drop policy if exists "Admins can add exam revisions" on public.exam_revisions;
+create policy "Admins can add exam revisions"
+  on public.exam_revisions for insert to authenticated with check (public.is_admin());
 
 drop policy if exists "Users can read own submissions" on public.exam_submissions;
 create policy "Users can read own submissions"
@@ -279,13 +347,14 @@ revoke all on function public.is_allowed() from public, anon;
 grant execute on function public.is_allowed() to authenticated;
 revoke all on function public.can_read_exam_file(text) from public, anon;
 grant execute on function public.can_read_exam_file(text) to authenticated;
-revoke all on public.admins, public.allowed_users, public.exams, public.exam_keys, public.exam_submissions, public.user_data
+revoke all on public.admins, public.allowed_users, public.exams, public.exam_keys, public.exam_revisions, public.exam_submissions, public.user_data
   from public, anon, authenticated;
 grant select on public.admins, public.allowed_users to authenticated;
 grant insert, delete on public.allowed_users to authenticated;
-grant select (id, title, section, question_count, pdf_path, created_at, updated_at)
+grant select (id, title, section, question_count, pdf_path, original_filename, file_id, page_start, page_end, start_question, status, version, created_at, updated_at)
   on public.exams to authenticated;
 grant insert, update, delete on public.exams to authenticated;
+grant select, insert on public.exam_revisions to authenticated;
 grant select on public.exam_submissions to authenticated;
 grant select, insert, update, delete on public.user_data to authenticated;
 
