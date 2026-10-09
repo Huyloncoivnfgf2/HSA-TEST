@@ -17,6 +17,7 @@ Thiếu lời giải không chặn lượt thi; nó chỉ là cảnh báo vì ng
 ## Đã làm
 
 - Hộp chọn chế độ làm bài hiển thị rõ danh sách lý do chưa đủ điều kiện và vô hiệu hóa nút bắt đầu đối với lượt học thật.
+- Kiểm tra “đủ đáp án” ở phía client chỉ áp dụng cho Owner, vì Learner không được giữ đáp án chuẩn trước khi nộp. Với Learner, cổng chính là trạng thái đã duyệt; đáp án vẫn chỉ được server trả sau khi nộp.
 - Owner vẫn bật được **Kiểm thử nội dung** để kiểm tra đề chưa duyệt/chưa đủ đáp án.
 - Learner không thấy đề chưa duyệt, nên không chạm được vào cổng này từ thư viện.
 
