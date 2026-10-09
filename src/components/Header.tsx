@@ -166,8 +166,8 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="hidden xl:inline">Mục tiêu</span>
           </button>
 
-          {/* Bank Manager button */}
-          <button
+          {/* Bank Manager button (Owner only: content management) */}
+          {isAdmin && (<button
             type="button"
             onClick={onOpenManager}
             className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
@@ -178,10 +178,10 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200 dark:bg-slate-700 font-bold">
               {questionCount}
             </span>
-          </button>
+          </button>)}
 
-          {/* Import / AI extract button */}
-          <button
+          {/* Import / AI extract button (Owner only) */}
+          {isAdmin && (<button
             type="button"
             onClick={onOpenImport}
             aria-label="Nhập bằng AI (thử nghiệm)"
@@ -190,7 +190,7 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Sparkles className="w-4 h-4 text-emerald-500" />
             <span className="hidden xl:inline">Nhập bằng AI (thử nghiệm)</span>
-          </button>
+          </button>)}
 
           <button
             type="button"
@@ -214,8 +214,8 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
-          {/* Google Drive sync button */}
-          <button
+          {/* Google Drive sync button (Owner only: content import) */}
+          {isAdmin && (<button
             type="button"
             onClick={onOpenDrive}
             className="p-2 sm:px-2.5 sm:py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-1"
@@ -223,7 +223,7 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Cloud className="w-4 h-4 text-amber-500" />
             <span className="hidden xl:inline">Drive</span>
-          </button>
+          </button>)}
 
           {/* Dark mode toggle */}
           <button
