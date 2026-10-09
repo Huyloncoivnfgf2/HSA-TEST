@@ -27,6 +27,7 @@ export interface PdfExamScratchpad {
 export interface PdfExamAttempt {
   id: string;
   mode: PdfExamMode;
+  isContentTest?: boolean;
   answers: Record<number, string>;
   score: number;
   submittedAt: number;
@@ -62,6 +63,7 @@ export interface PdfExamSession {
   examId: string;
   attemptId?: string;
   mode: PdfExamMode;
+  isContentTest?: boolean;
   answers: Record<number, string>;
   answerModes: Record<number, PdfAnswerMode>;
   flaggedQuestions: Record<number, boolean>;
