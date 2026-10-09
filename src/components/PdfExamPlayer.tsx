@@ -327,6 +327,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
       const attempt: PdfExamAttempt = {
       id: crypto.randomUUID(),
       mode: currentSession.mode,
+      isContentTest: currentSession.isContentTest,
       answers: currentSession.answers,
       startedAt: currentSession.startedAt,
       answerModes: currentSession.answerModes,
@@ -344,7 +345,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
       const updatedExam: PdfExam = {
       ...submittedExam,
       attempts: [...exam.attempts, attempt],
-      bestScore: Math.max(exam.bestScore ?? 0, attempt.score),
+      bestScore: attempt.isContentTest ? exam.bestScore : Math.max(exam.bestScore ?? 0, attempt.score),
       };
       const submittedSession: PdfExamSession = {
       ...currentSession,
@@ -357,8 +358,10 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
       await savePdfExamSession(submittedSession);
       setExam(updatedExam);
       setSession(submittedSession);
-      recordExamResult(createPdfExamRecord(updatedExam, attempt, updatedExam.answerKey, updatedExam.acceptedAnswers));
-      handleResultsUpdated();
+      if (!attempt.isContentTest) {
+        recordExamResult(createPdfExamRecord(updatedExam, attempt, updatedExam.answerKey, updatedExam.acceptedAnswers));
+        handleResultsUpdated();
+      }
       setStorageError(null);
     } catch (error) {
       console.error('Could not submit the PDF exam:', error);
@@ -479,7 +482,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
     saveSession(nextSession);
     void savePdfExam(updatedExam).then(() => {
       const attempt = updatedExam.attempts.find((item) => item.id === session.attemptId);
-      if (attempt) {
+      if (attempt && !attempt.isContentTest) {
         replacePdfExamResult(createPdfExamRecord(updatedExam, attempt, updatedExam.answerKey, updatedExam.acceptedAnswers));
         handleResultsUpdated();
       }
@@ -514,7 +517,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
       const regradedExam = {
         ...updatedExam,
         attempts,
-        bestScore: Math.max(0, ...attempts.map((attempt) => attempt.score)),
+        bestScore: attempts.some((attempt) => !attempt.isContentTest) ? Math.max(0, ...attempts.filter((attempt) => !attempt.isContentTest).map((attempt) => attempt.score)) : exam.bestScore,
       };
       const currentAttempt = attempts.find((attempt) => attempt.id === session.attemptId);
       if (!currentAttempt) return;
@@ -527,6 +530,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
         const sorted = [...attempts].sort((a, b) => a.submittedAt - b.submittedAt);
         let history = getExamHistory();
         for (const attempt of sorted) {
+          if (attempt.isContentTest) continue;
           history = replacePdfExamResult(createPdfExamRecord(
             regradedExam,
             attempt,
@@ -582,7 +586,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
     const regradedExam = {
       ...updatedExam,
       attempts,
-      bestScore: Math.max(0, ...attempts.map((attempt) => attempt.score)),
+      bestScore: attempts.some((attempt) => !attempt.isContentTest) ? Math.max(0, ...attempts.filter((attempt) => !attempt.isContentTest).map((attempt) => attempt.score)) : exam.bestScore,
     };
     const currentAttempt = attempts.find((attempt) => attempt.id === session.attemptId);
     if (!currentAttempt) return;
@@ -595,6 +599,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
       setSession(nextSession);
       let history = getExamHistory();
       for (const attempt of [...attempts].sort((a, b) => a.submittedAt - b.submittedAt)) {
+        if (attempt.isContentTest) continue;
         history = replacePdfExamResult(createPdfExamRecord(regradedExam, attempt, answerKeyRows, regradedExam.acceptedAnswers));
       }
       handleResultsUpdated();
