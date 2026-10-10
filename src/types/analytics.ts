@@ -63,7 +63,7 @@ export interface TopicStat {
   correctCount: number;
   wrongCount: number;
   accuracy: number; // 0 to 100
-  avgTimeSeconds: number;
+  avgTimeSeconds: number | null; // null: no per-question timing was recorded
   trend: 'up' | 'down' | 'stable';
   isInsufficientData: boolean; // true if totalAnswered < 5
 }
@@ -97,6 +97,13 @@ export interface AnalyticsSummary {
   recentScoreHistory: Record<SubjectType, number[]>; // up to 10 recent scores for sparkline
   recentScoreEntries: Record<SubjectType, Array<{ score: number; maxScore: number; date: number }>>;
   practiceAccuracy: Record<SubjectType, { accuracy: number; totalAnswered: number }>;
+  subjectTimeStats: Record<SubjectType, {
+    examsTaken: number;
+    answeredCount: number;
+    totalSeconds: number;
+    avgSecondsPerExam: number | null;
+    avgSecondsPerQuestion: number | null;
+  }>;
   streakDays: number;
   todayQuestionsAnswered: number;
   totalExamsTaken: number;

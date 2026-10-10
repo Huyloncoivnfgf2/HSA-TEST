@@ -262,10 +262,22 @@ export const HomeScoreCards: React.FC<HomeScoreCardsProps> = ({
                   <div className="flex items-center justify-between text-xs text-slate-500">
                     <span className="flex items-center gap-1">
                       <Zap className="w-3 h-3 text-amber-500" />
-                      Độ chính xác ôn tập:
+                      Tỉ lệ đúng các bài đã ghi nhận:
                     </span>
                     <strong className="text-amber-600 dark:text-amber-400">
                       {practice.accuracy}% ({practice.totalAnswered} câu)
+                    </strong>
+                  </div>
+                )}
+
+                {analytics.subjectTimeStats[subj].avgSecondsPerExam !== null && (
+                  <div className="flex items-center justify-between text-xs text-slate-500">
+                    <span>Thời gian TB mỗi bài:</span>
+                    <strong className="text-slate-700 dark:text-slate-200">
+                      {Math.round((analytics.subjectTimeStats[subj].avgSecondsPerExam ?? 0) / 60)} phút
+                      {analytics.subjectTimeStats[subj].avgSecondsPerQuestion !== null
+                        ? ` · ${analytics.subjectTimeStats[subj].avgSecondsPerQuestion}s/câu`
+                        : ''}
                     </strong>
                   </div>
                 )}

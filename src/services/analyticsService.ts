@@ -282,6 +282,7 @@ export function calculateTopicStats(subject: SubjectType): TopicStat[] {
       correct: number;
       wrong: number;
       totalTime: number;
+      timedCount: number;
       recentIsCorrect: boolean[];
     }
   >();
@@ -300,6 +301,7 @@ export function calculateTopicStats(subject: SubjectType): TopicStat[] {
           correct: 0,
           wrong: 0,
           totalTime: 0,
+          timedCount: 0,
           recentIsCorrect: [],
         };
 
@@ -309,7 +311,12 @@ export function calculateTopicStats(subject: SubjectType): TopicStat[] {
         } else {
           entry.wrong += 1;
         }
-        entry.totalTime += det.timeSpentSeconds || 60;
+        // Only real per-question timing counts; PDF details carry no
+        // per-question time, so inventing 60s/question would fabricate data.
+        if (det.timeSpentSeconds > 0) {
+          entry.totalTime += det.timeSpentSeconds;
+          entry.timedCount += 1;
+        }
         entry.recentIsCorrect.push(det.isCorrect);
 
         topicMap.set(key, entry);
@@ -320,7 +327,7 @@ export function calculateTopicStats(subject: SubjectType): TopicStat[] {
   const result: TopicStat[] = [];
   topicMap.forEach((val, topic) => {
     const accuracy = val.total > 0 ? Math.round((val.correct / val.total) * 100) : 0;
-    const avgTimeSeconds = val.total > 0 ? Math.round(val.totalTime / val.total) : 60;
+    const avgTimeSeconds = val.timedCount > 0 ? Math.round(val.totalTime / val.timedCount) : null;
 
     // Trend calculation
     let trend: 'up' | 'down' | 'stable' = 'stable';
@@ -482,12 +489,53 @@ export function getAnalyticsSummary(practiceProgress?: any): AnalyticsSummary {
     }
   });
 
-  // Practice mode accuracy (separate from exam score)
+  // Accuracy across every recorded (real-practice) attempt, plus time stats.
+  // Content-test attempts never enter the history, so they cannot skew this.
   const practiceAccuracy: Record<SubjectType, { accuracy: number; totalAnswered: number }> = {
     math: { accuracy: 0, totalAnswered: 0 },
     literature: { accuracy: 0, totalAnswered: 0 },
     science: { accuracy: 0, totalAnswered: 0 },
   };
+  const subjectTimeStats: AnalyticsSummary['subjectTimeStats'] = {
+    math: { examsTaken: 0, answeredCount: 0, totalSeconds: 0, avgSecondsPerExam: null, avgSecondsPerQuestion: null },
+    literature: { examsTaken: 0, answeredCount: 0, totalSeconds: 0, avgSecondsPerExam: null, avgSecondsPerQuestion: null },
+    science: { examsTaken: 0, answeredCount: 0, totalSeconds: 0, avgSecondsPerExam: null, avgSecondsPerQuestion: null },
+  };
+  const correctBySubject: Record<SubjectType, number> = { math: 0, literature: 0, science: 0 };
+  const timedAnswered: Record<SubjectType, number> = { math: 0, literature: 0, science: 0 };
+
+  (['math', 'literature', 'science'] as SubjectType[]).forEach((subj) => {
+    const records = history
+      .filter((h) => h.subjectScores && h.subjectScores[subj] && (!h.pdfExamId || h.pdfSubject === subj))
+      .sort((a, b) => b.date - a.date);
+    subjectTimeStats[subj].examsTaken = records.length;
+    records.forEach((record) => {
+      const details = record.details.filter((det) => det.subject === subj);
+      subjectTimeStats[subj].answeredCount += details.length;
+      practiceAccuracy[subj].totalAnswered += details.length;
+      correctBySubject[subj] += details.filter((det) => det.isCorrect).length;
+      if (record.timeSpentSeconds > 0) {
+        // Full-HSA sittings share one clock across 3 parts; split the time
+        // by this part's share of answered questions instead of counting the
+        // whole sitting three times.
+        const attributedSeconds = record.mode === 'full-hsa' && record.details.length > 0
+          ? Math.round((record.timeSpentSeconds * details.length) / record.details.length)
+          : record.timeSpentSeconds;
+        subjectTimeStats[subj].totalSeconds += attributedSeconds;
+        timedAnswered[subj] += details.length;
+      }
+    });
+    const stats = subjectTimeStats[subj];
+    stats.avgSecondsPerExam = stats.examsTaken > 0 && stats.totalSeconds > 0
+      ? Math.round(stats.totalSeconds / stats.examsTaken)
+      : null;
+    stats.avgSecondsPerQuestion = timedAnswered[subj] > 0
+      ? Math.round(stats.totalSeconds / timedAnswered[subj])
+      : null;
+    practiceAccuracy[subj].accuracy = practiceAccuracy[subj].totalAnswered > 0
+      ? Math.round((correctBySubject[subj] / practiceAccuracy[subj].totalAnswered) * 100)
+      : 0;
+  });
 
   return {
     goals,
@@ -497,6 +545,7 @@ export function getAnalyticsSummary(practiceProgress?: any): AnalyticsSummary {
     recentScoreHistory: recentHistory,
     recentScoreEntries: recentEntries,
     practiceAccuracy,
+    subjectTimeStats,
     streakDays,
     todayQuestionsAnswered,
     totalExamsTaken: history.length,

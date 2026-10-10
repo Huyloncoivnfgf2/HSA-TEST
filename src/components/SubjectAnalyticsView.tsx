@@ -213,7 +213,7 @@ export const SubjectAnalyticsView: React.FC<SubjectAnalyticsViewProps> = ({
                     {weak.topic}
                   </h3>
                   <p className="text-xs text-slate-500 mt-1">
-                    Đã làm {weak.totalAnswered} câu • Sai {weak.wrongCount} câu • Thời gian trung bình: {weak.avgTimeSeconds}s/câu
+                    Đã làm {weak.totalAnswered} câu • Sai {weak.wrongCount} câu • Thời gian trung bình: {weak.avgTimeSeconds !== null ? `${weak.avgTimeSeconds}s/câu` : 'chưa có dữ liệu giờ từng câu'}
                   </p>
                 </div>
 
@@ -322,7 +322,7 @@ export const SubjectAnalyticsView: React.FC<SubjectAnalyticsViewProps> = ({
                         </td>
 
                         <td className="py-4 px-3 text-center text-slate-500">
-                          {item.avgTimeSeconds}s / câu
+                          {item.avgTimeSeconds !== null ? `${item.avgTimeSeconds}s / câu` : '—'}
                         </td>
 
                         <td className="py-4 px-3 text-center">
