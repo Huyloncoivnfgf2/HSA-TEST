@@ -510,6 +510,7 @@ declare
   v_total integer := 0;
   v_learners integer := 0;
   v_potentially_changed integer := 0;
+  v_content_test_total integer := 0;
   v_earliest timestamptz;
   v_latest timestamptz;
 begin
@@ -543,19 +544,22 @@ begin
      p_proposed_answers ->> candidate.question_number::text
    );
 
-  select count(*),
-         count(distinct user_id),
+  -- Ảnh hưởng sửa lỗi chỉ tính trên lượt học thật. Lượt kiểm thử nội dung
+  -- (Task 7.5) được đếm riêng để Owner biết nhưng không bị chấm lại.
+  select count(*) filter (where not submission.is_content_test),
+         count(distinct user_id) filter (where not submission.is_content_test),
          count(*) filter (
-           where exists (
+           where not submission.is_content_test and exists (
              select 1
                from unnest(v_changed_questions) as changed(question_number)
               where public.pdf_answers_equal(submission.answers ->> changed.question_number::text, v_old_answers ->> changed.question_number::text)
                  is distinct from public.pdf_answers_equal(submission.answers ->> changed.question_number::text, p_proposed_answers ->> changed.question_number::text)
            )
          ),
-         min(submitted_at),
-         max(submitted_at)
-    into v_total, v_learners, v_potentially_changed, v_earliest, v_latest
+         count(*) filter (where submission.is_content_test),
+         min(submitted_at) filter (where not submission.is_content_test),
+         max(submitted_at) filter (where not submission.is_content_test)
+    into v_total, v_learners, v_potentially_changed, v_content_test_total, v_earliest, v_latest
     from public.exam_submissions as submission
    where submission.exam_id = p_exam_id;
 
@@ -566,6 +570,7 @@ begin
     'totalSubmissions', coalesce(v_total, 0),
     'affectedLearners', coalesce(v_learners, 0),
     'potentiallyChangedSubmissions', coalesce(v_potentially_changed, 0),
+    'contentTestSubmissions', coalesce(v_content_test_total, 0),
     'earliestSubmissionAt', v_earliest,
     'latestSubmissionAt', v_latest
   );
