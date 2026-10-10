@@ -94,7 +94,11 @@ export function recordExamResult(record: ExamRecord): ExamRecord[] {
 export function replacePdfExamResult(record: ExamRecord): ExamRecord[] {
   if (!record.pdfExamId) throw new Error('A PDF exam id is required to update a PDF result.');
   const history = getExamHistory();
-  const updated = [record, ...history.filter((item) => item.id !== record.id)];
+  // Keep history newest-first by real submission date. The replaced record
+  // may be an older attempt that was just regraded; putting it at the front
+  // unconditionally would make it look like the latest result (Task 8.8).
+  const updated = [record, ...history.filter((item) => item.id !== record.id)]
+    .sort((a, b) => b.date - a.date);
   saveExamHistory(updated);
 
   saveMistakeNotebook(getMistakeNotebook().filter((entry) => entry.pdfExamId !== record.pdfExamId));

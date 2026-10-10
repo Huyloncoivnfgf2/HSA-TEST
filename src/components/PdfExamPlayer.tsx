@@ -152,6 +152,10 @@ export function createPdfExamRecord(
   return {
     id: `pdf-${attempt.id}`,
     date: attempt.submittedAt,
+    ...(attempt.regradedAt ? { regradedAt: attempt.regradedAt } : {}),
+    ...(attempt.originalScore !== undefined && attempt.regradedAt
+      ? { originalTotalScore: attempt.originalScore }
+      : {}),
     mode: 'single-subject',
     subjectScores,
     totalScore: subjectScore,

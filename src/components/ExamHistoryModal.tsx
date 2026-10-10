@@ -85,6 +85,11 @@ export const ExamHistoryModal: React.FC<ExamHistoryModalProps> = ({
                         <Calendar className="w-3.5 h-3.5" />
                         {dateStr}
                       </span>
+                      {rec.regradedAt && (
+                        <span className="px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold">
+                          Đã chấm lại{rec.originalTotalScore !== undefined && rec.originalTotalScore !== rec.totalScore ? ` · điểm gốc ${rec.originalTotalScore}` : ''}
+                        </span>
+                      )}
                     </div>
 
                     {/* Breakdown pill tags */}

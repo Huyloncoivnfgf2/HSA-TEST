@@ -50,6 +50,8 @@ export interface ExamRecord {
   timeSpentSeconds: number;
   details: QuestionAttemptDetail[];
   aiFeedback?: string;
+  regradedAt?: number;
+  originalTotalScore?: number;
   pdfExamId?: string;
   pdfExamTitle?: string;
   pdfSubject?: SubjectType;
