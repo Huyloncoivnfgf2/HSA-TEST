@@ -6,10 +6,11 @@
 ## 1. Đã thiết lập
 
 - Repo có bộ kiểm thử tự động đầu tiên trong thư mục `tests/`, chạy bằng lệnh **`bun run test`** (không cần cài thêm thư viện — dùng sẵn cơ chế test của Bun).
-- Kết quả hiện tại: **22 kiểm tra đạt, 0 lỗi**, trên 3 nhóm:
+- Kết quả hiện tại: **26 kiểm tra đạt, 0 lỗi**, trên 4 nhóm:
   - `tests/pdfExam.test.ts` (12): chuẩn hóa/chấm điểm, đề gộp theo khoảng câu, đọc đáp án báo trùng/thiếu, chế độ Luyện tập thật/Kiểm thử, ảnh chụp đáp án khi chấm lại, cổng sẵn sàng của đề.
   - `tests/analytics.test.ts` (5): thứ tự lịch sử theo ngày nộp, tỉ lệ đúng tính thật (lỗi 0% của Task 8.3), độ tin cậy, chuyên đề yếu không lấy nhóm "Tổng hợp", thời gian từng câu không bị bịa, chấm lại không xáo thứ tự (Task 8.8).
   - `tests/securityGuards.test.ts` (5): không nhúng `service_role`, đáp án không đọc trực tiếp, nộp bài qua hàm máy chủ, dấu kiểm thử chỉ Owner, thông báo chỉ người nhận.
+  - `tests/examSystems.test.ts` (4): registry hệ kỳ thi HSA/TSA/THPT (Task 9.7).
 - Các file test được loại khỏi kiểm tra kiểu của mã ứng dụng để `bun run lint` vẫn chỉ phản ánh code web như trước.
 
 ## 2. Quy trình hồi quy từ nay
