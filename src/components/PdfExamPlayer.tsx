@@ -911,7 +911,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
           <h2 className="font-extrabold">Phiếu đáp án</h2>
           <p className="text-xs text-slate-500">{Object.values(session.answers).filter((answer) => answer.trim()).length}/{gradingQuestionCount} câu đã trả lời</p>
         </div>
-        <button type="button" aria-label="Đóng phiếu đáp án" onClick={() => setAnswerDrawerOpen(false)} className="rounded-lg p-2 hover:bg-slate-100 dark:hover:bg-slate-800 lg:hidden"><X className="h-4 w-4" /></button>
+        <button type="button" aria-label="Đóng phiếu đáp án" onClick={() => setAnswerDrawerOpen(false)} className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg p-2 hover:bg-slate-100 dark:hover:bg-slate-800 lg:hidden"><X className="h-4 w-4" /></button>
       </div>
       {submitted && (
         <div className="shrink-0 border-b border-emerald-200 bg-emerald-50 px-4 py-3 dark:border-emerald-900 dark:bg-emerald-950/30">
@@ -978,11 +978,11 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
       <div ref={responseRef} className="shrink-0 border-t border-slate-200 p-3 dark:border-slate-800">
         <div className="mb-2 flex items-center justify-between gap-2 text-xs font-bold">
           <span>Câu {selectedQuestion}</span>
-          <button type="button" onClick={() => setReportOpen(true)} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-bold text-amber-700 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950"><Flag className="h-3.5 w-3.5" /> Báo lỗi</button>
+          <button type="button" onClick={() => setReportOpen(true)} className="inline-flex min-h-[36px] items-center gap-1 rounded-lg px-2.5 py-2 text-[11px] font-bold text-amber-700 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950"><Flag className="h-3.5 w-3.5" /> Báo lỗi</button>
           {!submitted && (
             <div className="flex items-center gap-1">
-              <button type="button" onClick={() => toggleFlag(selectedQuestion)} className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 ${session.flaggedQuestions[selectedQuestion] ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' : 'hover:bg-slate-100 dark:hover:bg-slate-800'}`}><Flag className="h-3.5 w-3.5" /> Cờ</button>
-              <button type="button" onClick={attachCurrentPage} className="rounded-lg px-2 py-1 text-[10px] text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">Gắn trang {currentPage}</button>
+              <button type="button" onClick={() => toggleFlag(selectedQuestion)} className={`inline-flex min-h-[36px] items-center gap-1 rounded-lg px-2.5 py-2 ${session.flaggedQuestions[selectedQuestion] ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' : 'hover:bg-slate-100 dark:hover:bg-slate-800'}`}><Flag className="h-3.5 w-3.5" /> Cờ</button>
+              <button type="button" onClick={attachCurrentPage} className="min-h-[36px] rounded-lg px-2.5 py-2 text-[11px] text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">Gắn trang {currentPage}</button>
             </div>
           )}
         </div>
@@ -991,14 +991,14 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
             {exam.subject !== 'literature' && (
               <div className="mb-2 grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1 text-[10px] font-bold dark:bg-slate-800">
                 {(['choice', 'fill'] as const).map((mode) => (
-                  <button key={mode} type="button" onClick={() => changeAnswerMode(mode)} className={`rounded-md py-1.5 ${((session.answerModes[selectedQuestion] ?? 'choice') === mode) ? 'bg-white text-emerald-700 shadow-xs dark:bg-slate-700 dark:text-emerald-300' : 'text-slate-500'}`}>{mode === 'choice' ? 'Trắc nghiệm' : 'Điền đáp án'}</button>
+                  <button key={mode} type="button" onClick={() => changeAnswerMode(mode)} className={`rounded-md py-2.5 ${((session.answerModes[selectedQuestion] ?? 'choice') === mode) ? 'bg-white text-emerald-700 shadow-xs dark:bg-slate-700 dark:text-emerald-300' : 'text-slate-500'}`}>{mode === 'choice' ? 'Trắc nghiệm' : 'Điền đáp án'}</button>
                 ))}
               </div>
             )}
             {(session.answerModes[selectedQuestion] ?? 'choice') === 'choice' || exam.subject === 'literature' ? (
               <div className="grid grid-cols-4 gap-1">
                 {['A', 'B', 'C', 'D'].map((answer) => (
-                  <button key={answer} type="button" onClick={() => changeAnswer(answer)} className={`rounded-lg border py-2 text-sm font-bold ${session.answers[selectedQuestion] === answer ? 'border-emerald-500 bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' : 'border-slate-200 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800'}`}>{answer}</button>
+                  <button key={answer} type="button" onClick={() => changeAnswer(answer)} className={`rounded-lg border py-3 text-sm font-bold ${session.answers[selectedQuestion] === answer ? 'border-emerald-500 bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' : 'border-slate-200 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800'}`}>{answer}</button>
                 ))}
               </div>
             ) : (
@@ -1008,7 +1008,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
                   value={session.answers[selectedQuestion] ?? ''}
                   onChange={(event) => changeAnswer(event.target.value)}
                   placeholder="Nhập đáp án, ví dụ 12,5"
-                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base font-normal text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white sm:text-sm"
                 />
               </label>
             )}
@@ -1021,7 +1021,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
               : <p>Đáp án đúng: <strong className="text-emerald-700 dark:text-emerald-300">{gradingAnswerKey[selectedQuestion]}</strong></p>}
             {currentOutcome === false && session.answers[selectedQuestion] &&
               session.answerModes[selectedQuestion] === 'fill' && (
-                <button type="button" onClick={() => setAppealQuestion(selectedQuestion)} className="rounded-lg border border-amber-300 px-3 py-1.5 font-bold text-amber-800 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-950">Tôi đúng</button>
+                <button type="button" onClick={() => setAppealQuestion(selectedQuestion)} className="rounded-lg border border-amber-300 px-3 py-2.5 font-bold text-amber-800 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-950">Tôi đúng</button>
               )}
             {currentOutcome === false && (
               <label className="block text-[11px] font-semibold text-slate-500">
@@ -1030,7 +1030,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
                   value={session.chapterLabels[selectedQuestion] ?? ''}
                   onChange={(event) => updateChapterLabel(selectedQuestion, event.target.value)}
                   placeholder="Ví dụ: Hàm số"
-                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-normal dark:border-slate-700 dark:bg-slate-800"
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-base font-normal dark:border-slate-700 dark:bg-slate-800 sm:text-xs"
                 />
               </label>
             )}
@@ -1044,7 +1044,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
     <div className="flex h-[calc(100dvh-4rem)] min-h-[420px] flex-col">
       <header className="z-40 flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-900 sm:px-4">
         <div className="flex min-w-0 items-center gap-2">
-          <button type="button" onClick={onBack} aria-label="Quay lại thư viện" className="rounded-lg p-2 hover:bg-slate-100 dark:hover:bg-slate-800"><ArrowLeft className="h-4 w-4" /></button>
+          <button type="button" onClick={onBack} aria-label="Quay lại thư viện" className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg p-2 hover:bg-slate-100 dark:hover:bg-slate-800"><ArrowLeft className="h-4 w-4" /></button>
           <div className="min-w-0">
             <h1 className="truncate text-sm font-extrabold sm:text-base">{exam.title}</h1>
             <p className="text-[10px] text-slate-500">{subject.shortName} · {session.mode === 'test' ? 'Kiểm tra' : session.mode === 'study' ? 'Ôn tập' : 'Xem lại'} · {attemptKindLabel(getSessionAttemptKind(session))}{getSessionAttemptKind(session) === 'content-test' ? ' — không tính vào tiến độ học tập' : ''}</p>
@@ -1139,7 +1139,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
         </div>
         <aside className="hidden h-full w-[330px] shrink-0 border-l border-slate-200 lg:block xl:w-[380px] dark:border-slate-800">{answerPanel}</aside>
         {!answerDrawerOpen && (
-          <button type="button" onClick={() => setAnswerDrawerOpen(true)} className="fixed bottom-5 right-4 z-30 inline-flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-3 text-sm font-bold text-white shadow-lg lg:hidden"><Menu className="h-4 w-4" /> Phiếu đáp án</button>
+          <button type="button" onClick={() => setAnswerDrawerOpen(true)} className="fixed bottom-5 right-4 z-30 mb-[env(safe-area-inset-bottom)] inline-flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-3 text-sm font-bold text-white shadow-lg lg:hidden"><Menu className="h-4 w-4" /> Phiếu đáp án</button>
         )}
         {answerDrawerOpen && (
           <div className="fixed inset-0 z-50 bg-slate-950/50 lg:hidden" onClick={() => setAnswerDrawerOpen(false)}>
@@ -1191,7 +1191,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
           <div className="flex max-h-[92dvh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-slate-900">
             <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
               <div><h3 className="font-extrabold">Sửa đáp án đúng</h3><p className="mt-1 text-xs text-slate-500">{exam.title} · bản sửa sẽ tạo phiên bản v{(exam.version ?? 1) + 1}; lượt đã nộp không tự đổi điểm</p></div>
-              <button type="button" onClick={() => setEditingAnswerKey(false)} aria-label="Đóng" className="rounded-lg p-2 hover:bg-slate-100 dark:hover:bg-slate-800"><X className="h-4 w-4" /></button>
+              <button type="button" onClick={() => setEditingAnswerKey(false)} aria-label="Đóng" className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg p-2 hover:bg-slate-100 dark:hover:bg-slate-800"><X className="h-4 w-4" /></button>
             </div>
             <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
               <textarea value={answerKeyDraft} onChange={(event) => handleAnswerKeyPaste(event.target.value, exam.questionCount)} rows={4} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" placeholder="1.A 2.C 3.12,5" />

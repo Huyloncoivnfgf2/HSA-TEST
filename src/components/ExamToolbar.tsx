@@ -168,7 +168,7 @@ export const ExamToolbar: React.FC<ExamToolbarProps> = ({
           <button
             type="button"
             onClick={() => onChangeTool('pointer')}
-            className={`p-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${
+            className={`min-h-[40px] p-2 px-2.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${
               activeTool === 'pointer'
                 ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xs'
                 : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -184,7 +184,7 @@ export const ExamToolbar: React.FC<ExamToolbarProps> = ({
             type="button"
             disabled={readOnly}
             onClick={() => handleToolClick('pen')}
-            className={`p-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-40 ${
+            className={`min-h-[40px] p-2 px-2.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-40 ${
               activeTool === 'pen'
                 ? 'bg-blue-600 text-white shadow-xs'
                 : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -200,7 +200,7 @@ export const ExamToolbar: React.FC<ExamToolbarProps> = ({
             type="button"
             disabled={readOnly}
             onClick={() => handleToolClick('highlight')}
-            className={`p-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-40 ${
+            className={`min-h-[40px] p-2 px-2.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-40 ${
               activeTool === 'highlight'
                 ? 'bg-amber-500 text-white shadow-xs'
                 : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -216,7 +216,7 @@ export const ExamToolbar: React.FC<ExamToolbarProps> = ({
             type="button"
             disabled={readOnly}
             onClick={() => handleToolClick('underline')}
-            className={`p-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-40 ${
+            className={`min-h-[40px] p-2 px-2.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-40 ${
               activeTool === 'underline'
                 ? 'bg-purple-600 text-white shadow-xs'
                 : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -232,7 +232,7 @@ export const ExamToolbar: React.FC<ExamToolbarProps> = ({
             type="button"
             disabled={readOnly}
             onClick={() => handleToolClick('eraser')}
-            className={`p-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-40 ${
+            className={`min-h-[40px] p-2 px-2.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-40 ${
               activeTool === 'eraser'
                 ? 'bg-rose-600 text-white shadow-xs'
                 : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -248,7 +248,7 @@ export const ExamToolbar: React.FC<ExamToolbarProps> = ({
             type="button"
             disabled={readOnly}
             onClick={onToggleRuler}
-            className={`p-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-40 ${
+            className={`min-h-[40px] p-2 px-2.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-40 ${
               isRulerOpen
                 ? 'bg-amber-100 dark:bg-amber-950/60 border border-amber-400 text-amber-700 dark:text-amber-300 shadow-xs'
                 : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -318,7 +318,7 @@ export const ExamToolbar: React.FC<ExamToolbarProps> = ({
             type="button"
             disabled={!canUndo || readOnly}
             onClick={onUndo}
-            className="p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none transition"
+            className="inline-flex min-h-9 min-w-9 items-center justify-center p-2 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none transition"
             title="Hoàn tác [Ctrl+Z]"
           >
             <Undo2 className="w-4 h-4" />
@@ -329,7 +329,7 @@ export const ExamToolbar: React.FC<ExamToolbarProps> = ({
             type="button"
             disabled={!canRedo || readOnly}
             onClick={onRedo}
-            className="p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none transition"
+            className="inline-flex min-h-9 min-w-9 items-center justify-center p-2 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none transition"
             title="Làm lại [Ctrl+Shift+Z]"
           >
             <Redo2 className="w-4 h-4" />
@@ -344,7 +344,7 @@ export const ExamToolbar: React.FC<ExamToolbarProps> = ({
                 onClear();
               }
             }}
-            className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition disabled:opacity-30 disabled:pointer-events-none"
+            className="inline-flex min-h-9 min-w-9 items-center justify-center p-2 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition disabled:opacity-30 disabled:pointer-events-none"
             title="Xoá hết ghi chú câu hiện tại"
           >
             <Trash2 className="w-4 h-4" />
@@ -356,7 +356,7 @@ export const ExamToolbar: React.FC<ExamToolbarProps> = ({
           <button
             type="button"
             onClick={onToggleShowAnnotations}
-            className={`p-1.5 rounded-lg transition ${
+            className={`inline-flex min-h-9 min-w-9 items-center justify-center p-2 rounded-lg transition ${
               showAnnotations
                 ? 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
                 : 'text-amber-500 bg-amber-50 dark:bg-amber-950/30 font-semibold'
@@ -408,7 +408,7 @@ export const ExamToolbar: React.FC<ExamToolbarProps> = ({
                 <button
                   type="button"
                   onClick={onToggleScratchpad}
-                  className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition ${
+                  className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition ${
                     isScratchpadOpen
                       ? 'bg-purple-600 text-white'
                       : 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300'
@@ -421,7 +421,7 @@ export const ExamToolbar: React.FC<ExamToolbarProps> = ({
               <button
                 type="button"
                 onClick={() => setIsMobileCollapsed((prev) => !prev)}
-                className="p-1 rounded-md text-slate-500 hover:text-slate-900 dark:hover:text-slate-100"
+                className="inline-flex min-h-9 min-w-9 items-center justify-center p-2 rounded-md text-slate-500 hover:text-slate-900 dark:hover:text-slate-100"
               >
                 {isMobileCollapsed ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
               </button>

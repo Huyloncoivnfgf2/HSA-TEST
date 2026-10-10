@@ -77,19 +77,19 @@ export const PdfContentReportModal: React.FC<PdfContentReportModalProps> = ({
           <form onSubmit={(event) => void submit(event)} className="mt-5 space-y-4">
             <label className="block space-y-1 text-xs font-bold text-slate-600 dark:text-slate-300">
               Thành phần bị lỗi
-              <select value={component} onChange={(event) => setComponent(event.target.value as ContentReportComponent)} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal dark:border-slate-700 dark:bg-slate-800">
+              <select value={component} onChange={(event) => setComponent(event.target.value as ContentReportComponent)} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-base font-normal dark:border-slate-700 dark:bg-slate-800 sm:text-sm">
                 {contentReportComponents.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
               </select>
             </label>
             <label className="block space-y-1 text-xs font-bold text-slate-600 dark:text-slate-300">
               Loại lỗi
-              <select value={category} onChange={(event) => setCategory(event.target.value as ContentReportCategory)} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal dark:border-slate-700 dark:bg-slate-800">
+              <select value={category} onChange={(event) => setCategory(event.target.value as ContentReportCategory)} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-base font-normal dark:border-slate-700 dark:bg-slate-800 sm:text-sm">
                 {contentReportCategories.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
               </select>
             </label>
             <label className="block space-y-1 text-xs font-bold text-slate-600 dark:text-slate-300">
               Lý do / bằng chứng
-              <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={4} placeholder="Mô tả cụ thể lỗi bạn thấy, ví dụ đáp án đúng phải là... vì..." className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal dark:border-slate-700 dark:bg-slate-800" />
+              <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={4} placeholder="Mô tả cụ thể lỗi bạn thấy, ví dụ đáp án đúng phải là... vì..." className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-base font-normal dark:border-slate-700 dark:bg-slate-800 sm:text-sm" />
               <span className="text-[11px] font-normal text-slate-500">Cần ít nhất 10 ký tự để Owner có đủ thông tin kiểm tra.</span>
             </label>
             {error && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-xs text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{error}</p>}
