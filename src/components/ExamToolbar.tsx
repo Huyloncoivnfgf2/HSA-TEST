@@ -161,7 +161,7 @@ export const ExamToolbar: React.FC<ExamToolbarProps> = ({
       {/* ============================================================== */}
       {/* DESKTOP TOOLBAR (Horizontal pill bar neatly placed above question) */}
       {/* ============================================================== */}
-      <div className="flex flex-wrap items-center justify-between gap-3 p-2 px-3 rounded-2xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200/90 dark:border-slate-800/90 shadow-md mb-4 select-none">
+      <div className="hidden lg:flex flex-wrap items-center justify-between gap-3 p-2 px-3 rounded-2xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200/90 dark:border-slate-800/90 shadow-md mb-4 select-none">
         {/* Left: Tools Group */}
         <div className="flex items-center gap-1">
           {/* Con trỏ (Pointer) */}
@@ -420,6 +420,15 @@ export const ExamToolbar: React.FC<ExamToolbarProps> = ({
 
               <button
                 type="button"
+                onClick={onToggleShowAnnotations}
+                className="inline-flex min-h-9 min-w-9 items-center justify-center p-2 rounded-md text-slate-500 hover:text-slate-900 dark:hover:text-slate-100"
+                title={showAnnotations ? 'Ẩn ghi chú' : 'Hiện ghi chú'}
+              >
+                {showAnnotations ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setIsMobileCollapsed((prev) => !prev)}
                 className="inline-flex min-h-9 min-w-9 items-center justify-center p-2 rounded-md text-slate-500 hover:text-slate-900 dark:hover:text-slate-100"
               >
@@ -557,7 +566,7 @@ export const ExamToolbar: React.FC<ExamToolbarProps> = ({
                           type="button"
                           onClick={() => onChangeColor(c.hex)}
                           style={{ backgroundColor: c.hex }}
-                          className={`w-6 h-6 rounded-full ${
+                          className={`w-7 h-7 rounded-full ${
                             isSelected ? 'ring-2 ring-blue-500 scale-110' : 'opacity-80'
                           }`}
                         />
@@ -576,7 +585,7 @@ export const ExamToolbar: React.FC<ExamToolbarProps> = ({
                           key={w.id}
                           type="button"
                           onClick={() => onChangeStrokeWidth(w.id)}
-                          className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                          className={`px-2 py-1.5 rounded-md text-[10px] font-bold ${
                             strokeWidth === w.id
                               ? 'bg-blue-600 text-white'
                               : 'text-slate-500 bg-slate-100 dark:bg-slate-800'

@@ -306,7 +306,7 @@ export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({
     <section className="relative flex h-full min-h-0 flex-col bg-slate-200 dark:bg-slate-950">
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-slate-300 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
         <div className="flex items-center gap-1">
-          <button type="button" onClick={() => goToPage(currentPage - 1)} disabled={currentPage <= firstVisiblePage} className="rounded-lg p-2 hover:bg-slate-100 disabled:opacity-40 dark:hover:bg-slate-800" aria-label="Trang trước"><ChevronLeft className="h-4 w-4" /></button>
+          <button type="button" onClick={() => goToPage(currentPage - 1)} disabled={currentPage <= firstVisiblePage} className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg p-2 hover:bg-slate-100 disabled:opacity-40 dark:hover:bg-slate-800" aria-label="Trang trước"><ChevronLeft className="h-4 w-4" /></button>
           <span className="text-xs font-semibold">Trang</span>
           <input
             aria-label="Số trang"
@@ -319,15 +319,15 @@ export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({
             onKeyDown={(event) => {
               if (event.key === 'Enter') goToPage(Number(pageInput) || currentPage);
             }}
-            className="w-14 rounded-md border border-slate-300 bg-white px-1.5 py-1 text-center text-xs dark:border-slate-700 dark:bg-slate-800"
+            className="w-14 rounded-md border border-slate-300 bg-white px-1.5 py-1.5 text-center text-base dark:border-slate-700 dark:bg-slate-800 sm:text-xs"
           />
           <span className="text-xs font-semibold">/{pageCount || 0}</span>
-          <button type="button" onClick={() => goToPage(currentPage + 1)} disabled={currentPage >= lastVisiblePage} className="rounded-lg p-2 hover:bg-slate-100 disabled:opacity-40 dark:hover:bg-slate-800" aria-label="Trang sau"><ChevronRight className="h-4 w-4" /></button>
+          <button type="button" onClick={() => goToPage(currentPage + 1)} disabled={currentPage >= lastVisiblePage} className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg p-2 hover:bg-slate-100 disabled:opacity-40 dark:hover:bg-slate-800" aria-label="Trang sau"><ChevronRight className="h-4 w-4" /></button>
         </div>
         <div className="flex items-center gap-1">
-          <button type="button" onClick={() => setZoomPreservingPosition(zoom - 10)} disabled={zoom <= 50} className="rounded-lg p-2 hover:bg-slate-100 disabled:opacity-40 dark:hover:bg-slate-800" aria-label="Thu nhỏ"><Minus className="h-4 w-4" /></button>
+          <button type="button" onClick={() => setZoomPreservingPosition(zoom - 10)} disabled={zoom <= 50} className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg p-2 hover:bg-slate-100 disabled:opacity-40 dark:hover:bg-slate-800" aria-label="Thu nhỏ"><Minus className="h-4 w-4" /></button>
           <span className="w-12 text-center text-xs font-bold">{zoom}%</span>
-          <button type="button" onClick={() => setZoomPreservingPosition(zoom + 10)} disabled={zoom >= 300} className="rounded-lg p-2 hover:bg-slate-100 disabled:opacity-40 dark:hover:bg-slate-800" aria-label="Phóng to"><Plus className="h-4 w-4" /></button>
+          <button type="button" onClick={() => setZoomPreservingPosition(zoom + 10)} disabled={zoom >= 300} className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg p-2 hover:bg-slate-100 disabled:opacity-40 dark:hover:bg-slate-800" aria-label="Phóng to"><Plus className="h-4 w-4" /></button>
           <button
             type="button"
             onClick={() => onScrollLockedChange(!scrollLocked)}

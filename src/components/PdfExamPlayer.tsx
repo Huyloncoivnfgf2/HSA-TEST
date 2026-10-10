@@ -2,6 +2,8 @@ import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useStat
 import {
   ArrowLeft,
   BookOpenCheck,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   Flag,
   Menu,
@@ -904,6 +906,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
         gradingAcceptedAnswers
       )
     : null;
+  const selectedQuestionIndex = Math.max(0, gradingQuestionNumbers.indexOf(selectedQuestion));
   const answerPanel = (
     <div className="flex h-full min-h-0 flex-col bg-white dark:bg-slate-900">
       <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-800">
@@ -985,6 +988,25 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
               <button type="button" onClick={attachCurrentPage} className="min-h-[36px] rounded-lg px-2.5 py-2 text-[11px] text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">Gắn trang {currentPage}</button>
             </div>
           )}
+        </div>
+        <div className="mb-2 flex items-center gap-2">
+          <button
+            type="button"
+            disabled={selectedQuestionIndex <= 0}
+            onClick={() => selectQuestion(gradingQuestionNumbers[selectedQuestionIndex - 1])}
+            className="inline-flex min-h-10 flex-1 items-center justify-center gap-1 rounded-lg border border-slate-200 px-2 text-xs font-bold disabled:opacity-40 dark:border-slate-700"
+          >
+            <ChevronLeft className="h-4 w-4" /> Câu trước
+          </button>
+          <span className="shrink-0 text-[11px] font-bold text-slate-500">{selectedQuestionIndex + 1}/{gradingQuestionNumbers.length}</span>
+          <button
+            type="button"
+            disabled={selectedQuestionIndex >= gradingQuestionNumbers.length - 1}
+            onClick={() => selectQuestion(gradingQuestionNumbers[selectedQuestionIndex + 1])}
+            className="inline-flex min-h-10 flex-1 items-center justify-center gap-1 rounded-lg border border-slate-200 px-2 text-xs font-bold disabled:opacity-40 dark:border-slate-700"
+          >
+            Câu sau <ChevronRight className="h-4 w-4" />
+          </button>
         </div>
         {!submitted ? (
           <>
@@ -1139,7 +1161,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
         </div>
         <aside className="hidden h-full w-[330px] shrink-0 border-l border-slate-200 lg:block xl:w-[380px] dark:border-slate-800">{answerPanel}</aside>
         {!answerDrawerOpen && (
-          <button type="button" onClick={() => setAnswerDrawerOpen(true)} className="fixed bottom-5 right-4 z-30 mb-[env(safe-area-inset-bottom)] inline-flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-3 text-sm font-bold text-white shadow-lg lg:hidden"><Menu className="h-4 w-4" /> Phiếu đáp án</button>
+          <button type="button" onClick={() => setAnswerDrawerOpen(true)} className={`fixed z-30 mb-[env(safe-area-inset-bottom)] inline-flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-3 text-sm font-bold text-white shadow-lg lg:hidden ${submitted ? 'bottom-5 left-4' : 'bottom-5 right-4'}`}><Menu className="h-4 w-4" /> Phiếu đáp án</button>
         )}
         {answerDrawerOpen && (
           <div className="fixed inset-0 z-50 bg-slate-950/50 lg:hidden" onClick={() => setAnswerDrawerOpen(false)}>
