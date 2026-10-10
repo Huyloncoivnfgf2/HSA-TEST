@@ -109,6 +109,16 @@ export interface LearningRecommendation {
   detail: string;
 }
 
+export interface GoalRiskAssessment {
+  target: number;
+  referenceScore: number | null;
+  gap: number | null;
+  level: 'unknown' | 'achieved' | 'low' | 'medium' | 'high';
+  label: string;
+  daysLeft: number | null;
+  plan: string;
+}
+
 export interface AnalyticsSummary {
   goals: UserGoals;
   latestExamScores: Record<SubjectType, number | null>;
@@ -128,4 +138,5 @@ export interface AnalyticsSummary {
   todayQuestionsAnswered: number;
   totalExamsTaken: number;
   reliability: Record<SubjectType, ReliabilityAssessment>;
+  goalRisks: Record<SubjectType, GoalRiskAssessment>;
 }

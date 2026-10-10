@@ -834,6 +834,7 @@ function AuthenticatedApp({
             />
 
             <LearningInsights
+              goalRisks={analytics.goalRisks}
               recommendations={learningRecommendations.filter(
                 (rec) => !(rec.kind === 'weak-topic' && dailyWeakRecommendation && rec.topic === dailyWeakRecommendation.topic && rec.subject === dailyWeakRecommendation.subject)
               )}

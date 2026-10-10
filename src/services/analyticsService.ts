@@ -10,6 +10,7 @@ import {
   ErrorClassification,
   ReliabilityAssessment,
   LearningRecommendation,
+  GoalRiskAssessment,
 } from '../types/analytics';
 import { userStorage as localStorage } from './userStorage';
 
@@ -581,9 +582,65 @@ export function getAnalyticsSummary(practiceProgress?: any): AnalyticsSummary {
     };
   });
 
+  // Goal risk per subject (Task 8.7): compare the target with the recent
+  // reference score (5-exam average, falling back to the latest exam).
+  const goalRiskLabel: Record<GoalRiskAssessment['level'], string> = {
+    unknown: 'Chưa có điểm để đánh giá',
+    achieved: 'Đã đạt mục tiêu',
+    low: 'Nguy cơ thấp',
+    medium: 'Nguy cơ trung bình',
+    high: 'Nguy cơ cao',
+  };
+  const daysLeft = goals.examDate
+    ? Math.ceil((new Date(goals.examDate).getTime() - new Date(new Date().toISOString().slice(0, 10)).getTime()) / 86400000)
+    : null;
+  const goalRisks = {} as Record<SubjectType, GoalRiskAssessment>;
+  (['math', 'literature', 'science'] as SubjectType[]).forEach((subj) => {
+    const target = subj === 'math' ? goals.targetMath : subj === 'literature' ? goals.targetLiterature : goals.targetScience;
+    const referenceScore = fiveExamAvg[subj] ?? latestScores[subj];
+    const gap = referenceScore === null ? null : Math.round((target - referenceScore) * 10) / 10;
+    let level: GoalRiskAssessment['level'];
+    if (gap === null) level = 'unknown';
+    else if (gap <= 0) level = 'achieved';
+    else if (gap <= 3) level = 'low';
+    else if (gap <= 8) level = 'medium';
+    else level = 'high';
+    if ((level === 'medium') && daysLeft !== null && daysLeft >= 0 && daysLeft <= 14) level = 'high';
+
+    const weakest = getWeakestTopics(subj)[0];
+    let plan: string;
+    if (level === 'unknown') {
+      plan = 'Chưa có bài Kiểm tra nào được ghi nhận cho phần này; hãy làm bài đầu tiên để Dashboard bắt đầu đánh giá được.';
+    } else if (level === 'achieved') {
+      plan = 'Duy trì nhịp hiện tại và giữ chuỗi ngày học để phong độ không rơi trước ngày thi.';
+    } else {
+      plan = `Cần thêm khoảng ${gap} điểm so với mức tham chiếu hiện tại (trung bình 5 bài gần nhất hoặc bài mới nhất).`;
+      if (weakest) {
+        plan += ` Ưu tiên chuyên đề yếu nhất có đủ dữ liệu: "${weakest.topic}" (đúng ${weakest.accuracy}%).`;
+      }
+      if (daysLeft !== null && daysLeft >= 0) {
+        plan += ` Còn ${daysLeft} ngày tới ngày thi dự kiến: giữ tối thiểu ${goals.dailyQuestionGoal} câu/ngày và làm thêm bài Kiểm tra phần này để đo lại sau mỗi đợt ôn.`;
+      }
+      if (daysLeft !== null && daysLeft < 0) {
+        plan += ' Ngày thi dự kiến đã qua; hãy cập nhật ngày thi trong Thiết lập mục tiêu.';
+      }
+    }
+
+    goalRisks[subj] = {
+      target,
+      referenceScore,
+      gap,
+      level,
+      label: goalRiskLabel[level],
+      daysLeft,
+      plan,
+    };
+  });
+
   return {
     goals,
     reliability,
+    goalRisks,
     latestExamScores: latestScores,
     fiveExamAverage: fiveExamAvg,
     scoreTrends,
