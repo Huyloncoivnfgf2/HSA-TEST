@@ -22,10 +22,11 @@ interface ExamHistoryModalProps {
 export const ExamHistoryModal: React.FC<ExamHistoryModalProps> = ({
   isOpen,
   onClose,
-  history,
+  history: rawHistory,
   onReviewExamRecord,
 }) => {
   if (!isOpen) return null;
+  const history = [...rawHistory].sort((a, b) => b.date - a.date);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">

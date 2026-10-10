@@ -95,6 +95,7 @@ export interface AnalyticsSummary {
   fiveExamAverage: Record<SubjectType, number | null>;
   scoreTrends: Record<SubjectType, 'up' | 'down' | 'stable'>;
   recentScoreHistory: Record<SubjectType, number[]>; // up to 10 recent scores for sparkline
+  recentScoreEntries: Record<SubjectType, Array<{ score: number; maxScore: number; date: number }>>;
   practiceAccuracy: Record<SubjectType, { accuracy: number; totalAnswered: number }>;
   streakDays: number;
   todayQuestionsAnswered: number;

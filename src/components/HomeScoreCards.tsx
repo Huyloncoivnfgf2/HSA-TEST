@@ -237,6 +237,16 @@ export const HomeScoreCards: React.FC<HomeScoreCardsProps> = ({
                 <div className={`my-2 ${cfg.color}`}>
                   {renderSparkline(history, target, goals.maxScorePerSubject, cfg.bg)}
                 </div>
+                {analytics.recentScoreEntries[subj].length > 0 && (
+                  <ul className="space-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+                    {[...analytics.recentScoreEntries[subj]].slice(-3).reverse().map((entry, idx) => (
+                      <li key={`${entry.date}-${idx}`} className="flex items-center justify-between">
+                        <span>{idx === 0 ? 'Gần nhất · ' : ''}{new Date(entry.date).toLocaleDateString('vi-VN')}</span>
+                        <strong className="text-slate-700 dark:text-slate-200">{entry.score}/{entry.maxScore}đ</strong>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
 
               {/* Bottom Meta & Practice Accuracy */}

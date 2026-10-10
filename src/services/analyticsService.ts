@@ -393,25 +393,51 @@ export function getAnalyticsSummary(practiceProgress?: any): AnalyticsSummary {
     science: [],
   };
 
+  const recentEntries: AnalyticsSummary['recentScoreEntries'] = {
+    math: [],
+    literature: [],
+    science: [],
+  };
+
   (['math', 'literature', 'science'] as SubjectType[]).forEach((subj) => {
-    // Filter exams containing this subject
-    const subjectExams = history
+    // Filter exams containing this subject, newest first as stored, then
+    // sort defensively by date so a regraded older record cannot masquerade
+    // as the latest result (Task 8.8).
+    const subjectRecords = history
       .filter((h) => h.subjectScores && h.subjectScores[subj] && (
         !h.pdfExamId || h.pdfSubject === subj
       ))
-      .map((h) => h.subjectScores[subj].score);
+      .sort((a, b) => b.date - a.date);
+    const subjectExams = subjectRecords.map((h) => h.subjectScores[subj].score);
 
     if (subjectExams.length > 0) {
       latestScores[subj] = subjectExams[0]; // most recent
       recentHistory[subj] = [...subjectExams].reverse().slice(-8); // chronological last 8 for sparkline
+      recentEntries[subj] = subjectRecords
+        .slice(0, 8)
+        .map((h) => ({
+          score: h.subjectScores[subj].score,
+          maxScore: h.subjectScores[subj].maxScore,
+          date: h.date,
+        }))
+        .reverse();
 
       // 5-exam average
       const last5 = subjectExams.slice(0, 5);
       const avg = last5.reduce((a, b) => a + b, 0) / last5.length;
       fiveExamAvg[subj] = Math.round(avg * 10) / 10;
 
-      // Trend: compare latest vs average
-      if (subjectExams.length >= 2) {
+      // Trend: with at least 4 exams compare the newest 3 against the
+      // previous 3 so one odd exam does not flip the trend; otherwise fall
+      // back to latest versus previous.
+      if (subjectExams.length >= 4) {
+        const newestAvg = subjectExams.slice(0, 3).reduce((a, b) => a + b, 0) / 3;
+        const previousAvg = subjectExams.slice(3, 6).reduce((a, b) => a + b, 0) / Math.min(3, subjectExams.length - 3);
+        const diff = newestAvg - previousAvg;
+        if (diff > 1.5) scoreTrends[subj] = 'up';
+        else if (diff < -1.5) scoreTrends[subj] = 'down';
+        else scoreTrends[subj] = 'stable';
+      } else if (subjectExams.length >= 2) {
         const diff = subjectExams[0] - subjectExams[1];
         if (diff > 1.5) scoreTrends[subj] = 'up';
         else if (diff < -1.5) scoreTrends[subj] = 'down';
@@ -433,6 +459,7 @@ export function getAnalyticsSummary(practiceProgress?: any): AnalyticsSummary {
     fiveExamAverage: fiveExamAvg,
     scoreTrends,
     recentScoreHistory: recentHistory,
+    recentScoreEntries: recentEntries,
     practiceAccuracy,
     streakDays,
     todayQuestionsAnswered,
