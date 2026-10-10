@@ -196,6 +196,8 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
   const [correctionDecision, setCorrectionDecision] = useState<Exclude<RegradeDecision, 'pending'>>('not_requested');
   const [appealQuestion, setAppealQuestion] = useState<number | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
+  const [evaluationNote, setEvaluationNote] = useState('');
+  const [isSavingEvaluation, setIsSavingEvaluation] = useState(false);
   const savingAnswersTimer = useRef<number | undefined>(undefined);
   const submittingRef = useRef(false);
   const gridQuestionRefs = useRef(new Map<number, HTMLButtonElement>());
@@ -209,6 +211,41 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
     () => exam ? pdfQuestionNumbers(exam.questionCount, exam.startQuestion ?? 1) : [],
     [exam?.questionCount, exam?.startQuestion]
   );
+
+  useEffect(() => {
+    const attempt = exam?.attempts.find((item) => item.id === session?.attemptId);
+    setEvaluationNote(attempt?.contentTestEvaluation?.note ?? '');
+  }, [exam, session?.attemptId]);
+
+  const saveContentTestEvaluation = useCallback(async (verdict: 'ok' | 'needs_fix') => {
+    if (!exam || !session?.attemptId) return;
+    const target = exam.attempts.find((attempt) => attempt.id === session.attemptId);
+    if (!target || !isContentTestAttempt(target)) return;
+    setIsSavingEvaluation(true);
+    try {
+      const updatedExam: PdfExam = {
+        ...exam,
+        attempts: exam.attempts.map((attempt) => attempt.id === target.id
+          ? {
+              ...attempt,
+              contentTestEvaluation: {
+                verdict,
+                note: evaluationNote.trim() || undefined,
+                evaluatedAt: Date.now(),
+              },
+            }
+          : attempt),
+      };
+      await savePdfExam(updatedExam);
+      setExam(updatedExam);
+      setStorageError(null);
+    } catch (error) {
+      console.error('Could not save the content-test evaluation:', error);
+      setStorageError('Không thể lưu đánh giá lượt kiểm thử.');
+    } finally {
+      setIsSavingEvaluation(false);
+    }
+  }, [exam, session?.attemptId, evaluationNote]);
 
   useEffect(() => {
     if (questionNumbers.length && !questionNumbers.includes(selectedQuestion)) {
@@ -878,6 +915,21 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
             <span>Thời gian: {timeSpentMinutes} phút</span>
           </div>
           {session.examVersion && <p className="mt-1 text-[11px] text-slate-500">Phiên bản đề: v{session.examVersion}</p>}
+          {isAdmin && activeAttempt && isContentTestAttempt(activeAttempt) && (
+            <div className="mt-3 rounded-xl border border-amber-200 bg-white/70 p-3 dark:border-amber-900 dark:bg-slate-900/60">
+              <p className="text-xs font-extrabold text-amber-700 dark:text-amber-300">Đánh giá lượt kiểm thử nội dung</p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                {activeAttempt.contentTestEvaluation
+                  ? `Đã đánh giá: ${activeAttempt.contentTestEvaluation.verdict === 'ok' ? 'Nội dung đạt' : 'Cần sửa nội dung'} · ${new Date(activeAttempt.contentTestEvaluation.evaluatedAt).toLocaleString('vi-VN')}`
+                  : 'Chưa đánh giá. Đánh giá chỉ ghi trên lượt kiểm thử này, không vào tiến độ học tập.'}
+              </p>
+              <textarea value={evaluationNote} onChange={(event) => setEvaluationNote(event.target.value)} rows={2} placeholder="Ghi chú cần sửa (không bắt buộc)" className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-900" />
+              <div className="mt-2 flex gap-2">
+                <button type="button" disabled={isSavingEvaluation} onClick={() => void saveContentTestEvaluation('ok')} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-bold text-white disabled:opacity-40">Nội dung đạt</button>
+                <button type="button" disabled={isSavingEvaluation} onClick={() => void saveContentTestEvaluation('needs_fix')} className="rounded-lg bg-amber-500 px-3 py-1.5 text-[11px] font-bold text-white disabled:opacity-40">Cần sửa nội dung</button>
+              </div>
+            </div>
+          )}
         </div>
       )}
       <div className="min-h-0 flex-1 overflow-y-auto p-3">

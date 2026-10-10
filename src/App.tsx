@@ -266,7 +266,7 @@ function AuthenticatedApp({
     saveExamSession(session);
   };
 
-  const handleStartPdfExam = async (exam: PdfExam, mode: PdfExamMode, options?: { isContentTest?: boolean }) => {
+  const handleStartPdfExam = async (exam: PdfExam, mode: PdfExamMode, options?: { isContentTest?: boolean; attemptId?: string }) => {
     const savedSession = loadPdfSessionFromLocalStorage();
     if (savedSession && !savedSession.submitted) {
       if (savedSession.examId === exam.id && savedSession.mode === mode && Boolean(savedSession.isContentTest) === Boolean(options?.isContentTest)) {
@@ -283,27 +283,30 @@ function AuthenticatedApp({
     const latestAttempt = mode === 'review'
       ? sortedAttempts.find((attempt) => !isContentTestAttempt(attempt)) ?? sortedAttempts[0]
       : sortedAttempts[0];
-    if (mode === 'review' && !latestAttempt) return;
+    const reviewAttempt = mode === 'review'
+      ? sortedAttempts.find((attempt) => attempt.id === options?.attemptId) ?? latestAttempt
+      : undefined;
+    if (mode === 'review' && !reviewAttempt) return;
     const now = Date.now();
-    const session: PdfExamSession = mode === 'review' && latestAttempt
+    const session: PdfExamSession = mode === 'review' && reviewAttempt
       ? {
           id: 'active',
           examId: exam.id,
           mode: 'review',
-          isContentTest: latestAttempt.isContentTest,
-          attemptKind: getAttemptKind(latestAttempt),
-          examVersion: latestAttempt.examVersion ?? exam.version ?? 1,
-          answers: latestAttempt.answers,
-          attemptId: latestAttempt.id,
-          answerModes: latestAttempt.answerModes ?? {},
-          flaggedQuestions: latestAttempt.flaggedQuestions ?? {},
-          chapterLabels: latestAttempt.chapterLabels ?? {},
-          questionPages: latestAttempt.questionPages ?? {},
-          startedAt: latestAttempt.submittedAt,
+          isContentTest: reviewAttempt.isContentTest,
+          attemptKind: getAttemptKind(reviewAttempt),
+          examVersion: reviewAttempt.examVersion ?? exam.version ?? 1,
+          answers: reviewAttempt.answers,
+          attemptId: reviewAttempt.id,
+          answerModes: reviewAttempt.answerModes ?? {},
+          flaggedQuestions: reviewAttempt.flaggedQuestions ?? {},
+          chapterLabels: reviewAttempt.chapterLabels ?? {},
+          questionPages: reviewAttempt.questionPages ?? {},
+          startedAt: reviewAttempt.submittedAt,
           endsAt: null,
           submitted: true,
-          score: latestAttempt.score,
-          submittedAt: latestAttempt.submittedAt,
+          score: reviewAttempt.score,
+          submittedAt: reviewAttempt.submittedAt,
         }
       : {
           id: 'active',
