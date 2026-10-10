@@ -116,11 +116,15 @@ create table if not exists public.exam_submissions (
   exam_id uuid not null references public.exams(id) on delete cascade,
   answers jsonb not null check (jsonb_typeof(answers) = 'object'),
   exam_version integer,
+  is_content_test boolean not null default false,
   submitted_at timestamptz not null default now()
 );
 
 alter table public.exam_submissions
   add column if not exists exam_version integer;
+
+alter table public.exam_submissions
+  add column if not exists is_content_test boolean not null default false;
 
 create table if not exists public.content_reports (
   id uuid primary key default gen_random_uuid(),
@@ -403,7 +407,8 @@ create policy "Users can delete own user data"
   using (user_id = (select auth.uid()) and public.is_allowed());
 
 drop function if exists public.submit_exam(uuid, jsonb);
-create function public.submit_exam(exam_id uuid, answers jsonb)
+drop function if exists public.submit_exam(uuid, jsonb, boolean);
+create function public.submit_exam(exam_id uuid, answers jsonb, p_is_content_test boolean default false)
 returns jsonb
 language plpgsql
 security definer
@@ -414,6 +419,9 @@ declare
   v_answers jsonb;
   v_solution_path text;
   v_exam_version integer;
+  -- Chỉ Owner mới được ghi dấu kiểm thử nội dung ở phía máy chủ; tài khoản
+  -- người học luôn bị ghi là lượt thật để không lách được phân tích tiến độ.
+  v_is_content_test boolean := coalesce(p_is_content_test, false) and public.is_admin();
 begin
   if v_user_id is null then
     raise exception 'Authentication required' using errcode = '28000';
@@ -428,8 +436,8 @@ begin
     raise exception 'Exam not found' using errcode = 'P0002';
   end if;
 
-  insert into public.exam_submissions(user_id, exam_id, answers, exam_version)
-  select v_user_id, $1, $2, version from public.exams where id = $1
+  insert into public.exam_submissions(user_id, exam_id, answers, exam_version, is_content_test)
+  select v_user_id, $1, $2, version, v_is_content_test from public.exams where id = $1
   returning exam_version into v_exam_version;
 
   select coalesce(keys.answers, '{}'::jsonb), exams.solution_path
@@ -608,8 +616,8 @@ begin
 end;
 $$;
 
-revoke all on function public.submit_exam(uuid, jsonb) from public, anon;
-grant execute on function public.submit_exam(uuid, jsonb) to authenticated;
+revoke all on function public.submit_exam(uuid, jsonb, boolean) from public, anon;
+grant execute on function public.submit_exam(uuid, jsonb, boolean) to authenticated;
 revoke all on function public.save_exam_key(uuid, jsonb) from public, anon;
 grant execute on function public.save_exam_key(uuid, jsonb) to authenticated;
 revoke all on function public.is_admin() from public, anon;
