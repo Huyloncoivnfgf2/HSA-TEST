@@ -89,6 +89,17 @@ export interface DailyActivity {
   examCount: number;
 }
 
+export type ReliabilityLevel = 'none' | 'low' | 'medium' | 'high';
+
+export interface ReliabilityAssessment {
+  level: ReliabilityLevel;
+  label: string;
+  reasons: string[];
+  examsTaken: number;
+  questionsAnswered: number;
+  spanDays: number;
+}
+
 export interface AnalyticsSummary {
   goals: UserGoals;
   latestExamScores: Record<SubjectType, number | null>;
@@ -107,4 +118,5 @@ export interface AnalyticsSummary {
   streakDays: number;
   todayQuestionsAnswered: number;
   totalExamsTaken: number;
+  reliability: Record<SubjectType, ReliabilityAssessment>;
 }

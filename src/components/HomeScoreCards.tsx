@@ -258,6 +258,22 @@ export const HomeScoreCards: React.FC<HomeScoreCardsProps> = ({
                   </strong>
                 </div>
 
+                <div className="flex items-center justify-between text-xs text-slate-500" title={analytics.reliability[subj].reasons.join(' ')}>
+                  <span>Độ tin cậy dữ liệu:</span>
+                  <strong className={
+                    analytics.reliability[subj].level === 'high'
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : analytics.reliability[subj].level === 'medium'
+                        ? 'text-amber-600 dark:text-amber-400'
+                        : 'text-rose-600 dark:text-rose-400'
+                  }>
+                    {analytics.reliability[subj].label}
+                    {analytics.reliability[subj].examsTaken > 0
+                      ? ` (${analytics.reliability[subj].examsTaken} bài · ${analytics.reliability[subj].questionsAnswered} câu)`
+                      : ''}
+                  </strong>
+                </div>
+
                 {practice && practice.totalAnswered > 0 && (
                   <div className="flex items-center justify-between text-xs text-slate-500">
                     <span className="flex items-center gap-1">

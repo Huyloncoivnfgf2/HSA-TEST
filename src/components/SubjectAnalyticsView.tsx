@@ -1,7 +1,18 @@
 import React, { useState } from 'react';
 import { SubjectType, ScienceSubSubject, Question, SUBJECT_CONFIGS } from '../types/hsa';
 import { UserGoals, TopicStat } from '../types/analytics';
-import { calculateClassificationCoverage, calculateTopicStats, getWeakestTopics } from '../services/analyticsService';
+import { calculateClassificationCoverage, calculateTopicStats, getAnalyticsSummary, getWeakestTopics } from '../services/analyticsService';
+
+const ReliabilityBanner: React.FC<{ subject: SubjectType }> = ({ subject }) => {
+  const reliability = getAnalyticsSummary().reliability[subject];
+  if (reliability.level === 'high') return null;
+  return (
+    <div className="p-4 rounded-2xl border border-amber-200 bg-amber-50 text-xs leading-5 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+      <strong>Độ tin cậy dữ liệu: {reliability.label}.</strong>{' '}
+      {reliability.reasons.join(' ')}
+    </div>
+  );
+};
 import {
   ArrowLeft,
   Target,
@@ -121,6 +132,9 @@ export const SubjectAnalyticsView: React.FC<SubjectAnalyticsViewProps> = ({
           {!hasTopicClassification && ' Dữ liệu chưa đủ nhãn chuyên đề nên phần phân tích theo chuyên đề dưới đây chỉ để tham khảo; muốn kết luận chắc hơn, hãy gắn nhãn chương/chuyên đề cho câu hỏi khi xem lại bài.'}
         </div>
       )}
+
+      {/* Reliability of this part's analytics */}
+      <ReliabilityBanner subject={subject} />
 
       {/* Goal Estimation Insight Card */}
       <div className="p-6 rounded-3xl bg-gradient-to-r from-emerald-900 via-slate-900 to-slate-900 text-white shadow-xl space-y-4 border border-emerald-800/40">

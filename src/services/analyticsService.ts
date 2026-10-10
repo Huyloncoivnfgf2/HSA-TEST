@@ -8,6 +8,7 @@ import {
   AnalyticsSummary,
   DailyActivity,
   ErrorClassification,
+  ReliabilityAssessment,
 } from '../types/analytics';
 import { userStorage as localStorage } from './userStorage';
 
@@ -537,8 +538,51 @@ export function getAnalyticsSummary(practiceProgress?: any): AnalyticsSummary {
       : 0;
   });
 
+  // Reliability of the analytics per subject (Task 8.4): how much recorded
+  // real-practice data backs the numbers shown for that part.
+  const reliabilityLabel: Record<ReliabilityAssessment['level'], string> = {
+    none: 'Chưa có dữ liệu',
+    low: 'Thấp',
+    medium: 'Trung bình',
+    high: 'Cao',
+  };
+  const reliability = {} as Record<SubjectType, ReliabilityAssessment>;
+  (['math', 'literature', 'science'] as SubjectType[]).forEach((subj) => {
+    const records = history.filter((h) => h.subjectScores && h.subjectScores[subj] && (!h.pdfExamId || h.pdfSubject === subj));
+    const examsTaken = records.length;
+    const questionsAnswered = subjectTimeStats[subj].answeredCount;
+    const dates = records.map((r) => r.date).sort((a, b) => a - b);
+    const spanDays = dates.length > 1 ? Math.max(1, Math.round((dates[dates.length - 1] - dates[0]) / 86400000)) : 0;
+    let level: ReliabilityAssessment['level'];
+    if (examsTaken === 0) level = 'none';
+    else if (examsTaken < 2 || questionsAnswered < 30) level = 'low';
+    else if (examsTaken < 5 || questionsAnswered < 150) level = 'medium';
+    else level = 'high';
+    const reasons: string[] = [];
+    if (examsTaken === 0) {
+      reasons.push('Chưa có bài học thật nào được ghi nhận cho phần này.');
+    } else {
+      reasons.push(`Dựa trên ${examsTaken} bài · ${questionsAnswered} câu đã ghi nhận.`);
+      if (level === 'low') reasons.push('Còn ít dữ liệu, điểm và xu hướng hiện tại chỉ để tham khảo.');
+      if (spanDays > 0 && spanDays < 7) reasons.push(`Các bài dồn trong ${spanDays} ngày, xu hướng chưa ổn định.`);
+      const cov = calculateClassificationCoverage(subj);
+      if (questionsAnswered > 0 && cov.coveragePct < 30) {
+        reasons.push(`Độ phủ nhãn chuyên đề mới ${cov.coveragePct}%, kết luận theo chuyên đề còn yếu.`);
+      }
+    }
+    reliability[subj] = {
+      level,
+      label: reliabilityLabel[level],
+      reasons,
+      examsTaken,
+      questionsAnswered,
+      spanDays,
+    };
+  });
+
   return {
     goals,
+    reliability,
     latestExamScores: latestScores,
     fiveExamAverage: fiveExamAvg,
     scoreTrends,
