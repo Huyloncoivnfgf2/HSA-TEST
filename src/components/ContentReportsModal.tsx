@@ -149,6 +149,9 @@ export const ContentReportsModal: React.FC<ContentReportsModalProps> = ({ isOpen
                   </div>
                   <p className="rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-600 dark:bg-slate-800/70 dark:text-slate-300">
                     Ảnh hưởng ước tính trên cloud: {correction.affectedSubmissionCount ?? 'chưa có số liệu'} bài nộp · {correction.affectedLearnerCount ?? 'chưa có số liệu'} người học · {correction.potentiallyChangedCount ?? 'chưa có số liệu'} bài có thể đổi kết quả ở các câu đã sửa.
+                    {typeof correction.impactDetails.contentTestSubmissions === 'number' && correction.impactDetails.contentTestSubmissions > 0 && (
+                      <> Có {correction.impactDetails.contentTestSubmissions} lượt kiểm thử nội dung của đề này; các lượt đó giữ nguyên kết quả lúc kiểm thử, không bị chấm lại.</>
+                    )}
                     {typeof correction.impactDetails.earliestSubmissionAt === 'string' && typeof correction.impactDetails.latestSubmissionAt === 'string' && (
                       <> Khoảng bài nộp đã có: {new Date(correction.impactDetails.earliestSubmissionAt).toLocaleDateString('vi-VN')} – {new Date(correction.impactDetails.latestSubmissionAt).toLocaleDateString('vi-VN')}.</>
                     )}

@@ -10,6 +10,7 @@ export interface ExamCorrectionImpact {
   totalSubmissions: number;
   affectedLearners: number;
   potentiallyChangedSubmissions: number;
+  contentTestSubmissions?: number;
   earliestSubmissionAt: string | null;
   latestSubmissionAt: string | null;
 }
@@ -93,6 +94,7 @@ export async function assessExamCorrectionImpact(
       totalSubmissions: number;
       affectedLearners: number;
       potentiallyChangedSubmissions: number;
+      contentTestSubmissions?: number;
       earliestSubmissionAt: string | null;
       latestSubmissionAt: string | null;
     };

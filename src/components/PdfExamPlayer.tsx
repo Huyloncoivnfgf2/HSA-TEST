@@ -310,6 +310,9 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
           if (Object.keys(currentAnswerKey).length) {
             let correctionChangedAttempts = false;
             const correctedAttempts = foundExam.attempts.map((attempt) => {
+              // Lượt kiểm thử nội dung giữ nguyên ảnh chụp đáp án và điểm tại
+              // lúc kiểm thử (Task 7.5); sửa lỗi chỉ chấm lại lượt học thật.
+              if (isContentTestAttempt(attempt)) return attempt;
               const applicableCorrections = requestedCorrections.filter((correction) =>
                 (attempt.examVersion ?? 1) < correction.toVersion &&
                 !(attempt.regradeCorrectionIds ?? []).includes(correction.id)
@@ -717,7 +720,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
     }
     const shouldRegrade = correctionDecision === 'requested';
     const confirmation = shouldRegrade
-      ? 'Lưu đáp án đã sửa ở phiên bản mới và chấm lại các lượt đã nộp?'
+      ? 'Lưu đáp án đã sửa ở phiên bản mới và chấm lại các lượt học thật đã nộp? Lượt kiểm thử nội dung giữ nguyên kết quả lúc kiểm thử.'
       : 'Lưu đáp án đã sửa ở phiên bản mới? Các lượt đã nộp giữ nguyên điểm; chỉ lượt mới dùng đáp án này.';
     if (!window.confirm(confirmation)) return;
 
@@ -736,6 +739,8 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
       };
       const attempts = shouldRegrade
         ? correctedExam.attempts.map((attempt) => {
+            // Lượt kiểm thử nội dung không bị chấm lại khi sửa lỗi (Task 7.5).
+            if (isContentTestAttempt(attempt)) return attempt;
             const correctedAttempt: PdfExamAttempt = {
               ...attempt,
               originalScore: attempt.originalScore ?? attempt.score,
