@@ -50,6 +50,13 @@ export interface PdfExamAttempt {
   originalScore?: number;
   regradedAt?: number;
   regradeCorrectionIds?: string[];
+  // Đánh giá của Owner cho một lượt kiểm thử nội dung (Task 7.4). Chỉ lưu ở
+  // lượt đó, không đi vào phân tích tiến độ học tập.
+  contentTestEvaluation?: {
+    verdict: 'ok' | 'needs_fix';
+    note?: string;
+    evaluatedAt: number;
+  };
 }
 
 // Chế độ của một lượt làm bài PDF. `real` là luyện tập thật (tính vào tiến

@@ -15,6 +15,7 @@ import {
 import { SUBJECT_CONFIGS } from '../types/hsa';
 import {
   getPdfExamReadiness,
+  isContentTestAttempt,
   parsePdfAnswerKey,
   type PdfExam,
   type PdfExamMode,
@@ -59,7 +60,7 @@ const examStatusLabels: Record<PdfExamStatus, string> = {
 };
 
 interface PdfExamLibraryProps {
-  onStart: (exam: PdfExam, mode: PdfExamMode, options?: { isContentTest?: boolean }) => void;
+  onStart: (exam: PdfExam, mode: PdfExamMode, options?: { isContentTest?: boolean; attemptId?: string }) => void;
   isAdmin: boolean;
 }
 
@@ -585,11 +586,22 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart, isAdmin
                       {(exam.startQuestion ?? 1) > 1 && <span>Từ câu {exam.startQuestion}</span>}
                       {exam.version && <span>v{exam.version}</span>}
                       <span>Điểm cao nhất: {exam.bestScore === undefined ? '—' : `${exam.bestScore}/${exam.questionCount}`}</span>
+                      {isAdmin && (() => {
+                        const testAttempts = (exam.attempts ?? []).filter(isContentTestAttempt);
+                        if (!testAttempts.length) return null;
+                        const evaluated = testAttempts.filter((attempt) => attempt.contentTestEvaluation).length;
+                        return <span>Kiểm thử nội dung: {testAttempts.length} lượt · đã đánh giá {evaluated}/{testAttempts.length}</span>;
+                      })()}
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <button type="button" onClick={() => { setContentTest(false); setModeExam(exam); }} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700"><Play className="h-3.5 w-3.5" /> Làm bài</button>
                     <button type="button" onClick={() => onStart(exam, 'review')} disabled={!exam.attempts?.length} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:hover:bg-slate-800"><BookOpen className="h-3.5 w-3.5" /> Xem lại</button>
+                    {isAdmin && (() => {
+                      const latestTestAttempt = [...(exam.attempts ?? [])].filter(isContentTestAttempt).sort((a, b) => b.submittedAt - a.submittedAt)[0];
+                      if (!latestTestAttempt) return null;
+                      return <button type="button" onClick={() => onStart(exam, 'review', { isContentTest: true, attemptId: latestTestAttempt.id })} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 px-3 py-2 text-xs font-bold text-amber-700 hover:bg-amber-50 dark:border-amber-900 dark:text-amber-300 dark:hover:bg-amber-950">Lượt kiểm thử gần nhất</button>;
+                    })()}
                     {isAdmin && !exam.attempts?.length && (
                       <button
                         type="button"
