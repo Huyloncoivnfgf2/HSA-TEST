@@ -39,6 +39,44 @@ export interface PdfExamAttempt {
   chapterLabels?: Record<number, string>;
   questionPages?: Record<number, number>;
   overriddenCorrect?: number[];
+  // Ảnh chụp bộ đáp án đã dùng để chấm lượt này. Khi Owner sửa đáp án cho các
+  // lượt mới, lượt cũ vẫn hiển thị/chấm theo ảnh chụp này trừ khi Owner quyết
+  // định chấm lại và ảnh chụp được thay bằng bộ đáp án đã sửa.
+  answerKeySnapshot?: Record<number, string>;
+  acceptedAnswersSnapshot?: Record<number, string[]>;
+  questionCountSnapshot?: number;
+  startQuestionSnapshot?: number;
+  originalScore?: number;
+  regradedAt?: number;
+  regradeCorrectionIds?: string[];
+}
+
+export function getAttemptAnswerKey(
+  exam: PdfExam,
+  attempt?: PdfExamAttempt | null
+): Record<number, string> {
+  return attempt?.answerKeySnapshot ?? exam.answerKey;
+}
+
+export function getAttemptAcceptedAnswers(
+  exam: PdfExam,
+  attempt?: PdfExamAttempt | null
+): Record<number, string[]> {
+  return attempt?.acceptedAnswersSnapshot ?? exam.acceptedAnswers ?? {};
+}
+
+export function getAttemptQuestionCount(
+  exam: PdfExam,
+  attempt?: PdfExamAttempt | null
+): number {
+  return attempt?.questionCountSnapshot ?? exam.questionCount;
+}
+
+export function getAttemptStartQuestion(
+  exam: PdfExam,
+  attempt?: PdfExamAttempt | null
+): number {
+  return attempt?.startQuestionSnapshot ?? exam.startQuestion ?? 1;
 }
 
 export interface PdfExam {
