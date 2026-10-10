@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { SubjectType, ScienceSubSubject, Question, SUBJECT_CONFIGS } from '../types/hsa';
 import { UserGoals, TopicStat } from '../types/analytics';
-import { calculateTopicStats, getWeakestTopics } from '../services/analyticsService';
+import { calculateClassificationCoverage, calculateTopicStats, getWeakestTopics } from '../services/analyticsService';
 import {
   ArrowLeft,
   Target,
@@ -36,6 +36,8 @@ export const SubjectAnalyticsView: React.FC<SubjectAnalyticsViewProps> = ({
   const config = SUBJECT_CONFIGS[subject];
   const topicStats = calculateTopicStats(subject);
   const weakestTopics = getWeakestTopics(subject);
+  const coverage = calculateClassificationCoverage(subject);
+  const hasTopicClassification = coverage.classifiedQuestions >= 5 && coverage.classifiedTopicCount > 0;
 
   // SubSubject filter for Science
   const [selectedSubSubject, setSelectedSubSubject] = useState<ScienceSubSubject | 'all'>('all');
@@ -112,6 +114,14 @@ export const SubjectAnalyticsView: React.FC<SubjectAnalyticsViewProps> = ({
         </div>
       </div>
 
+      {/* Classification coverage: topic conclusions only when labels exist */}
+      {coverage.totalQuestions > 0 && (
+        <div className={`p-4 rounded-2xl border text-xs leading-5 ${hasTopicClassification ? 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300' : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300'}`}>
+          <strong>Độ phủ phân loại chuyên đề: {coverage.coveragePct}%</strong> ({coverage.classifiedQuestions}/{coverage.totalQuestions} câu đã ghi nhận có nhãn chuyên đề, {coverage.classifiedTopicCount} chuyên đề).
+          {!hasTopicClassification && ' Dữ liệu chưa đủ nhãn chuyên đề nên phần phân tích theo chuyên đề dưới đây chỉ để tham khảo; muốn kết luận chắc hơn, hãy gắn nhãn chương/chuyên đề cho câu hỏi khi xem lại bài.'}
+        </div>
+      )}
+
       {/* Goal Estimation Insight Card */}
       <div className="p-6 rounded-3xl bg-gradient-to-r from-emerald-900 via-slate-900 to-slate-900 text-white shadow-xl space-y-4 border border-emerald-800/40">
         <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold uppercase tracking-wider">
@@ -181,7 +191,7 @@ export const SubjectAnalyticsView: React.FC<SubjectAnalyticsViewProps> = ({
         {weakestTopics.length === 0 ? (
           <div className="p-6 rounded-3xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center text-xs sm:text-sm text-slate-500">
             <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2 opacity-80" />
-            Không có chủ đề nào bị yếu (&lt;75% với trên 5 câu đã làm) hoặc chưa đủ dữ liệu kiểm tra.
+            Không có chủ đề nào bị yếu (&lt;75% với trên 5 câu đã làm) hoặc chưa đủ dữ liệu kiểm tra{!hasTopicClassification && coverage.totalQuestions > 0 ? ' có nhãn chuyên đề' : ''}.
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -242,6 +252,10 @@ export const SubjectAnalyticsView: React.FC<SubjectAnalyticsViewProps> = ({
             </button>
           ))}
         </div>
+      )}
+
+      {subject === 'science' && !topicStats.some((t) => t.subSubject) && topicStats.length > 0 && (
+        <p className="text-xs text-slate-500 dark:text-slate-400 -mt-4">Các bài PDF đã ghi nhận chưa mang nhãn phân môn (Lí/Hóa/Sinh/Sử/Địa) nên bộ lọc phân môn chỉ áp dụng khi dữ liệu có nhãn này.</p>
       )}
 
       {/* Full Topic Performance Table */}

@@ -356,8 +356,44 @@ export function calculateTopicStats(subject: SubjectType): TopicStat[] {
 
 export function getWeakestTopics(subject: SubjectType): TopicStat[] {
   const stats = calculateTopicStats(subject);
-  // Filter only topics with sufficient data (>= 5 questions) and accuracy < 75%
-  return stats.filter((s) => !s.isInsufficientData && s.accuracy < 75);
+  // Filter only topics with sufficient data (>= 5 questions) and accuracy < 75%.
+  // The generic 'Tổng hợp' bucket is not a real topic, so it never becomes a
+  // "weakest topic" recommendation (Task 8.2).
+  return stats.filter((s) => !s.isInsufficientData && s.accuracy < 75 && s.topic !== 'Tổng hợp');
+}
+
+export interface ClassificationCoverage {
+  totalQuestions: number;
+  classifiedQuestions: number;
+  coveragePct: number;
+  classifiedTopicCount: number;
+}
+
+// How much of the recorded data actually carries a topic label. PDF attempts
+// only have a label when one was assigned per question, so topic conclusions
+// must be gated on this coverage (Task 8.2).
+export function calculateClassificationCoverage(subject: SubjectType): ClassificationCoverage {
+  const history = getExamHistory();
+  let total = 0;
+  let classified = 0;
+  const topics = new Set<string>();
+  history.forEach((exam) => {
+    exam.details.forEach((det) => {
+      if (det.subject !== subject) return;
+      total += 1;
+      const label = (det.subTopic ?? '').trim();
+      if (label && label !== 'Tổng hợp') {
+        classified += 1;
+        topics.add(label);
+      }
+    });
+  });
+  return {
+    totalQuestions: total,
+    classifiedQuestions: classified,
+    coveragePct: total > 0 ? Math.round((classified / total) * 100) : 0,
+    classifiedTopicCount: topics.size,
+  };
 }
 
 export function getAnalyticsSummary(practiceProgress?: any): AnalyticsSummary {
