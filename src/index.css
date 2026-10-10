@@ -1,6 +1,57 @@
 @import "tailwindcss";
 
 /* =========================================================================
+   TASK 10.3 — Shared UI primitives. These classes capture the patterns that
+   were previously repeated by hand across components (25+ copies of the
+   emerald primary button alone). New/edited UI should prefer these; existing
+   components adopt them gradually, without behaviour changes.
+   ========================================================================= */
+@layer base {
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid rgb(16 185 129 / 0.7);
+    outline-offset: 2px;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 font-bold text-white transition hover:bg-emerald-700 disabled:opacity-50;
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-xl bg-rose-600 font-bold text-white transition hover:bg-rose-700 disabled:opacity-50;
+  }
+
+  .btn-warning {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-600 font-bold text-white transition hover:bg-amber-700 disabled:opacity-50;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800;
+  }
+
+  .input-field {
+    @apply w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 transition focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100;
+  }
+
+  .modal-backdrop {
+    @apply fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-3 backdrop-blur-xs sm:p-4;
+  }
+
+  .modal-panel {
+    @apply relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-slate-900;
+  }
+}
+
+/* =========================================================================
    BẢNG XÉT DẤU & BẢNG BIẾN THIÊN (SIGN & VARIATION TABLES)
    Font monospace, border rõ, căn giữa ô, nền tối phù hợp với theme dark
    ========================================================================= */

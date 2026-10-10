@@ -96,7 +96,7 @@ export const LearningInsights: React.FC<LearningInsightsProps> = ({
               <button
                 type="button"
                 onClick={() => onPracticeTopic(rec.topic!, rec.subject!)}
-                className="shrink-0 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700"
+                className="btn-primary shrink-0 px-3 py-2 text-xs"
               >
                 Luyện ngay
               </button>
@@ -105,7 +105,7 @@ export const LearningInsights: React.FC<LearningInsightsProps> = ({
               <button
                 type="button"
                 onClick={onOpenMistakes}
-                className="shrink-0 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700"
+                className="btn-primary shrink-0 px-3 py-2 text-xs"
               >
                 Mở Sổ lỗi
               </button>
@@ -114,7 +114,7 @@ export const LearningInsights: React.FC<LearningInsightsProps> = ({
               <button
                 type="button"
                 onClick={() => onStartSubject(rec.subject!)}
-                className="shrink-0 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700"
+                className="btn-primary shrink-0 px-3 py-2 text-xs"
               >
                 Chọn bài
               </button>

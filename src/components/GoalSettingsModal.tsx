@@ -102,7 +102,7 @@ export const GoalSettingsModal: React.FC<GoalSettingsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+    <div className="modal-backdrop animate-in fade-in duration-200">
       <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-6 max-h-[92vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
@@ -144,7 +144,7 @@ export const GoalSettingsModal: React.FC<GoalSettingsModalProps> = ({
             type="date"
             value={examDate}
             onChange={(e) => setExamDate(e.target.value)}
-            className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200"
+            className="input-field font-semibold"
           />
           {examDatePassed && (
             <p className="text-[11px] font-semibold text-rose-600 dark:text-rose-400">
@@ -245,7 +245,7 @@ export const GoalSettingsModal: React.FC<GoalSettingsModalProps> = ({
                 max={200}
                 value={dailyQuestionGoal}
                 onChange={(e) => setDailyQuestionGoal(Number(e.target.value))}
-                className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-semibold"
+                className="input-field bg-slate-50 font-semibold dark:bg-slate-800"
               />
             </div>
 
@@ -259,7 +259,7 @@ export const GoalSettingsModal: React.FC<GoalSettingsModalProps> = ({
                 max={100}
                 value={maxScorePerSubject}
                 onChange={(e) => setMaxScorePerSubject(Number(e.target.value))}
-                className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-semibold"
+                className="input-field bg-slate-50 font-semibold dark:bg-slate-800"
               />
             </div>
           </div>
@@ -284,7 +284,7 @@ export const GoalSettingsModal: React.FC<GoalSettingsModalProps> = ({
           <button
             type="button"
             onClick={handleSave}
-            className="flex items-center gap-1.5 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md transition"
+            className="btn-primary px-6 py-2.5 text-xs shadow-md"
           >
             <Save className="w-4 h-4" />
             <span>Lưu mục tiêu</span>

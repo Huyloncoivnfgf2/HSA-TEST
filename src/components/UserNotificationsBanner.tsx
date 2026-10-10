@@ -53,7 +53,7 @@ export const UserNotificationsBanner: React.FC = () => {
             type="button"
             disabled={acknowledgingId === notification.id}
             onClick={() => void acknowledge(notification)}
-            className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl bg-amber-600 px-4 py-2.5 text-xs font-extrabold text-white transition hover:bg-amber-700 disabled:opacity-50"
+            className="btn-warning shrink-0 px-4 py-2.5 text-xs font-extrabold"
           >
             <Check className="h-4 w-4" /> OK
           </button>

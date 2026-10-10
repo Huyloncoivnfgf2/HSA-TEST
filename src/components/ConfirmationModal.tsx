@@ -25,7 +25,7 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+    <div className="modal-backdrop animate-in fade-in duration-200">
       <div className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4">
         <div className="flex items-start gap-4">
           <div
@@ -64,11 +64,7 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
           <button
             type="button"
             onClick={onConfirm}
-            className={`px-5 py-2 text-sm font-semibold text-white rounded-xl shadow-xs transition ${
-              type === 'danger'
-                ? 'bg-rose-600 hover:bg-rose-700'
-                : 'bg-emerald-600 hover:bg-emerald-700'
-            }`}
+            className={`${type === 'danger' ? 'btn-danger' : 'btn-primary'} px-5 py-2 text-sm shadow-xs`}
           >
             {confirmText}
           </button>
