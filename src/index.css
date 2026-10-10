@@ -66,3 +66,13 @@
   letter-spacing: -2px;
   color: #f43f5e;
 }
+
+/* Task 10.2: trên màn hình hẹp, bảng xét dấu cuộn ngang trong chính vùng của
+   nó thay vì tràn ra ngoài thẻ câu hỏi. */
+@media (max-width: 640px) {
+  .sign-table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}

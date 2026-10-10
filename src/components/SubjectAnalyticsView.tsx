@@ -286,7 +286,7 @@ export const SubjectAnalyticsView: React.FC<SubjectAnalyticsViewProps> = ({
         ) : (
           <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-xs">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+              <table className="w-full min-w-[560px] text-left text-xs">
                 <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800 font-bold uppercase tracking-wider">
                   <tr>
                     <th className="py-3.5 px-4 sm:px-6">Chuyên đề</th>
