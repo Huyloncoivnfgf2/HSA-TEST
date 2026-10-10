@@ -40,6 +40,7 @@ create table if not exists public.exams (
   id uuid primary key default gen_random_uuid(),
   title text not null,
   section text not null check (section in ('dinh_luong', 'dinh_tinh', 'khoa_hoc')),
+  system text not null default 'hsa' check (system in ('hsa', 'tsa', 'thpt')),
   question_count integer not null check (question_count > 0),
   pdf_path text not null,
   solution_path text,
@@ -50,6 +51,7 @@ create table if not exists public.exams (
 -- Giai đoạn 3: metadata quản lý đề. Các cột này được thêm kiểu if-not-exists để
 -- có thể chạy lại schema trên project đã có dữ liệu mà không mất đề cũ.
 alter table public.exams
+  add column if not exists system text not null default 'hsa',
   add column if not exists original_filename text,
   add column if not exists file_id text,
   add column if not exists page_start integer,
@@ -59,6 +61,15 @@ alter table public.exams
   add column if not exists version integer not null default 1,
   add column if not exists approved_at timestamptz,
   add column if not exists approved_by uuid references auth.users(id);
+
+-- Giai đoạn 9: hệ kỳ thi của đề (HSA hiện tại; sẵn sàng cho TSA/THPT).
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'exams_system_check') then
+    alter table public.exams
+      add constraint exams_system_check check (system in ('hsa', 'tsa', 'thpt'));
+  end if;
+end $$;
 
 -- Đề đã có trước khi có quy trình duyệt được coi là đã duyệt để không biến mất
 -- khỏi thư viện sau khi nâng cấp. Việc này chỉ chạy đúng một lần nhờ marker;
@@ -643,7 +654,7 @@ revoke all on public.admins, public.allowed_users, public.exams, public.exam_key
   from public, anon, authenticated;
 grant select on public.admins, public.allowed_users to authenticated;
 grant insert, delete on public.allowed_users to authenticated;
-grant select (id, title, section, question_count, pdf_path, original_filename, file_id, page_start, page_end, start_question, status, version, created_at, updated_at)
+grant select (id, title, section, system, question_count, pdf_path, original_filename, file_id, page_start, page_end, start_question, status, version, created_at, updated_at)
   on public.exams to authenticated;
 grant insert, update, delete on public.exams to authenticated;
 grant select, insert on public.exam_revisions to authenticated;
