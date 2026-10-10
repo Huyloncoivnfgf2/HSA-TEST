@@ -1,5 +1,10 @@
-import type { PdfExam, PdfExamStatus, PdfSubject } from '../types/pdfExam';
+import { normalizePdfAnswer, pdfAnswersEqual, type PdfExam, type PdfExamStatus, type PdfSubject } from '../types/pdfExam';
 import { deletePdfExam, loadPdfExams, savePdfExam } from './indexedDbService';
+import {
+  assessExamCorrectionImpact,
+  createExamCorrection,
+  type RegradeDecision,
+} from './examCorrectionService';
 import { supabase, type CloudExamRecord } from './supabaseClient';
 import { userStorage as localStorage } from './userStorage';
 
@@ -43,6 +48,54 @@ function isMissingManagementColumn(error: unknown): boolean {
   return /original_filename|file_id|page_start|page_end|start_question|status|version|exam_revisions|schema cache|column/i.test(message);
 }
 
+function changedAnswerQuestions(
+  previousAnswers: Record<number, string>,
+  correctedAnswers: Record<number, string>
+): number[] {
+  const questionNumbers = new Set<number>();
+  for (const key of [...Object.keys(previousAnswers), ...Object.keys(correctedAnswers)]) {
+    const questionNumber = Number(key);
+    if (Number.isSafeInteger(questionNumber) && questionNumber > 0) questionNumbers.add(questionNumber);
+  }
+  return [...questionNumbers]
+    .filter((questionNumber) => !pdfAnswersEqual(previousAnswers[questionNumber], correctedAnswers[questionNumber]))
+    .sort((first, second) => first - second);
+}
+
+function hasAnswerKeyContent(answers: Record<number, string>): boolean {
+  return Object.values(answers).some((answer) => normalizePdfAnswer(answer));
+}
+
+async function archiveExistingCloudFiles(exam: PdfExam): Promise<Record<string, string>> {
+  if (!supabase) return {};
+  try {
+    const { data, error } = await supabase
+      .from('exams')
+      .select('pdf_path,solution_path,version')
+      .eq('id', exam.id)
+      .maybeSingle();
+    if (error || !data) return {};
+    const record = data as { pdf_path: string; solution_path: string | null; version: number | null };
+    const archived: Record<string, string> = {};
+    const revisionPrefix = `${exam.id}/revisions/v${record.version ?? exam.version ?? 1}`;
+    if (record.pdf_path) {
+      const archivedPdfPath = `${revisionPrefix}/exam.pdf`;
+      const { error: copyError } = await supabase.storage.from('exam-files').copy(record.pdf_path, archivedPdfPath);
+      if (!copyError) archived.previousPdfPath = archivedPdfPath;
+    }
+    if (record.solution_path) {
+      const extension = record.solution_path.split('.').pop() || 'pdf';
+      const archivedSolutionPath = `${revisionPrefix}/solution.${extension}`;
+      const { error: copyError } = await supabase.storage.from('exam-files').copy(record.solution_path, archivedSolutionPath);
+      if (!copyError) archived.previousSolutionPath = archivedSolutionPath;
+    }
+    return archived;
+  } catch (error) {
+    console.warn('Could not archive the previous exam files:', error);
+    return {};
+  }
+}
+
 async function logExamRevision(examId: string, action: string, details: Record<string, unknown> = {}): Promise<void> {
   if (!supabase) return;
   try {
@@ -61,22 +114,23 @@ async function logExamRevision(examId: string, action: string, details: Record<s
 
 export async function loadCloudExamLibrary(isAdmin = false): Promise<PdfExam[]> {
   if (!supabase) throw new Error('Supabase is not configured');
-  let recordsResponse = await supabase
+  const managementResponse = await supabase
     .from('exams')
     .select(EXAM_SELECT_WITH_MANAGEMENT)
     .order('created_at', { ascending: false });
-  if (recordsResponse.error && isMissingManagementColumn(recordsResponse.error)) {
-    recordsResponse = await supabase
-      .from('exams')
-      .select(EXAM_SELECT_LEGACY)
-      .order('created_at', { ascending: false });
-  }
-  const { data: records, error } = recordsResponse;
-  if (error) throw error;
+  const legacyResponse = managementResponse.error && isMissingManagementColumn(managementResponse.error)
+    ? await supabase
+        .from('exams')
+        .select(EXAM_SELECT_LEGACY)
+        .order('created_at', { ascending: false })
+    : null;
+  const recordsResponse = legacyResponse ?? managementResponse;
+  const records = (recordsResponse.data ?? []) as unknown as CloudExamRecord[];
+  if (recordsResponse.error) throw recordsResponse.error;
   const localExams = await loadPdfExams();
   const localById = new Map(localExams.map((exam) => [exam.id, exam]));
   const result: PdfExam[] = [];
-  for (const record of (records ?? []) as CloudExamRecord[]) {
+  for (const record of records) {
     if (record.status === 'archived') continue;
     const local = localById.get(record.id);
     const cloudUpdatedAt = Date.parse(record.updated_at);
@@ -141,21 +195,66 @@ function parseAttemptCache(examId: string): PdfExam['attempts'] {
   }
 }
 
-export async function saveCloudAnswerKey(exam: PdfExam): Promise<void> {
+export async function saveCloudAnswerKey(
+  exam: PdfExam,
+  options: {
+    previousAnswerKey?: Record<number, string>;
+    regradeDecision?: RegradeDecision;
+  } = {}
+): Promise<number> {
   if (!supabase) throw new Error('Supabase is not configured');
+  const currentVersion = exam.version ?? 1;
+  const previousAnswerKey = options.previousAnswerKey;
+  const changedQuestions = previousAnswerKey
+    ? changedAnswerQuestions(previousAnswerKey, exam.answerKey)
+    : [];
+  if (previousAnswerKey && changedQuestions.length === 0) return currentVersion;
+
+  const isCorrection = Boolean(
+    previousAnswerKey && hasAnswerKeyContent(previousAnswerKey) && changedQuestions.length
+  );
+  const impact = isCorrection
+    ? await assessExamCorrectionImpact(exam.id, exam.answerKey)
+    : null;
+
   const { error } = await supabase.rpc('save_exam_key', {
     exam_id: exam.id,
     answers: exam.answerKey,
   });
   if (error) throw error;
-  const nextVersion = (exam.version ?? 1) + 1;
+  const nextVersion = currentVersion + 1;
   const { error: versionError } = await supabase.from('exams').update({ version: nextVersion }).eq('id', exam.id);
   if (versionError && !isMissingManagementColumn(versionError)) throw versionError;
-  await logExamRevision(exam.id, 'answer_key_updated', { version: nextVersion, answeredCount: Object.keys(exam.answerKey).length });
-  await savePdfExam({ ...exam, version: versionError ? exam.version : nextVersion });
+  const savedVersion = versionError ? currentVersion : nextVersion;
+  await logExamRevision(exam.id, 'answer_key_updated', {
+    version: savedVersion,
+    fromVersion: currentVersion,
+    toVersion: savedVersion,
+    previousAnswers: previousAnswerKey ?? null,
+    correctedAnswers: exam.answerKey,
+    changedQuestions,
+    answeredCount: Object.keys(exam.answerKey).length,
+  });
+  if (isCorrection && !versionError) {
+    await createExamCorrection({
+      examId: exam.id,
+      examTitle: exam.title,
+      fromVersion: currentVersion,
+      toVersion: savedVersion,
+      changeType: 'answer_key',
+      changedQuestions,
+      regradeDecision: options.regradeDecision ?? 'pending',
+      impact,
+    });
+  }
+  await savePdfExam({ ...exam, version: savedVersion });
+  return savedVersion;
 }
 
-export async function updateCloudExamMetadata(exam: PdfExam): Promise<void> {
+export async function updateCloudExamMetadata(
+  exam: PdfExam,
+  previousExam?: PdfExam
+): Promise<void> {
   if (!supabase) throw new Error('Supabase is not configured');
   // Do not rewrite pdf_path/solution_path here: renaming metadata must keep
   // pointing at the object that is already stored for this exam.
@@ -185,18 +284,57 @@ export async function updateCloudExamMetadata(exam: PdfExam): Promise<void> {
     if (legacyError) throw legacyError;
     return;
   }
+  const before = previousExam ? {
+    title: previousExam.title,
+    questionCount: previousExam.questionCount,
+    status: previousExam.status ?? 'draft',
+    pageStart: previousExam.pageStart ?? null,
+    pageEnd: previousExam.pageEnd ?? null,
+    startQuestion: previousExam.startQuestion ?? 1,
+  } : null;
+  const after = {
+    title: exam.title,
+    questionCount: exam.questionCount,
+    status: exam.status ?? 'draft',
+    pageStart: exam.pageStart ?? null,
+    pageEnd: exam.pageEnd ?? null,
+    startQuestion: exam.startQuestion ?? 1,
+  };
   await logExamRevision(exam.id, 'metadata_updated', {
     version: nextVersion,
+    fromVersion: exam.version ?? 1,
+    toVersion: nextVersion,
+    before,
+    after,
     status: exam.status ?? 'draft',
     pageStart: exam.pageStart ?? null,
     pageEnd: exam.pageEnd ?? null,
     startQuestion: exam.startQuestion ?? 1,
   });
+  if (previousExam && (
+    before?.startQuestion !== after.startQuestion ||
+    before?.questionCount !== after.questionCount ||
+    before?.pageStart !== after.pageStart ||
+    before?.pageEnd !== after.pageEnd
+  )) {
+    await createExamCorrection({
+      examId: exam.id,
+      examTitle: exam.title,
+      fromVersion: exam.version ?? 1,
+      toVersion: nextVersion,
+      changeType: before?.startQuestion !== after.startQuestion || before?.questionCount !== after.questionCount
+        ? 'question_range'
+        : 'metadata',
+      changedQuestions: [],
+      regradeDecision: 'pending',
+    });
+  }
 }
 
 export async function submitCloudExam(examId: string, answers: Record<number, string>): Promise<{
   answers: Record<number, string>;
   solutionPath: string | null;
+  examVersion: number | null;
 }> {
   if (!supabase) throw new Error('Supabase is not configured');
   const { data, error } = await supabase.rpc('submit_exam', {
@@ -204,8 +342,16 @@ export async function submitCloudExam(examId: string, answers: Record<number, st
     answers,
   });
   if (error) throw error;
-  const response = data as { answers: Record<number, string>; solution_path: string | null };
-  return { answers: response.answers, solutionPath: response.solution_path };
+  const response = data as {
+    answers: Record<number, string>;
+    solution_path: string | null;
+    exam_version?: number | null;
+  };
+  return {
+    answers: response.answers,
+    solutionPath: response.solution_path,
+    examVersion: response.exam_version ?? null,
+  };
 }
 
 export async function getCloudSolutionUrl(path: string): Promise<string> {
@@ -224,6 +370,7 @@ export async function uploadLocalExams(
   for (const exam of exams) {
     onProgress(exam.id, 'uploading');
     try {
+      const archivedFiles = await archiveExistingCloudFiles(exam);
       const pdfPath = cloudPdfPath(exam.id);
       const { error: pdfError } = await supabase.storage.from('exam-files').upload(pdfPath, exam.pdfBlob, {
         upsert: true,
@@ -266,7 +413,11 @@ export async function uploadLocalExams(
         }));
       }
       if (examError) throw examError;
-      await logExamRevision(exam.id, 'exam_uploaded', { status: exam.status ?? 'draft', version: exam.version ?? 1 });
+      await logExamRevision(exam.id, 'exam_uploaded', {
+        status: exam.status ?? 'draft',
+        version: exam.version ?? 1,
+        ...archivedFiles,
+      });
       if (Object.keys(exam.answerKey).length) await saveCloudAnswerKey(exam);
       await savePdfExam({ ...exam, fileId: exam.fileId ?? pdfPath, status: exam.status ?? 'draft', version: exam.version ?? 1, updatedAt: Date.now(), ...(solutionPath ? { solutionPath } : {}) });
       onProgress(exam.id, 'done');
