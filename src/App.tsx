@@ -58,6 +58,7 @@ import { SubjectAnalyticsView } from './components/SubjectAnalyticsView';
 import { GoalSettingsModal } from './components/GoalSettingsModal';
 import { LearnerProfileModal } from './components/LearnerProfileModal';
 import { ContentReportsModal } from './components/ContentReportsModal';
+import { UserNotificationsBanner } from './components/UserNotificationsBanner';
 import { MistakeNotebookModal } from './components/MistakeNotebookModal';
 import { ExamHistoryModal } from './components/ExamHistoryModal';
 import { PdfExamLibrary } from './components/PdfExamLibrary';
@@ -194,13 +195,17 @@ function AuthenticatedApp({
           id: crypto.randomUUID(),
           mode: session.mode === 'review' ? 'study' : session.mode,
           isContentTest: session.isContentTest,
-          examVersion: session.examVersion ?? exam.version ?? 1,
+          examVersion: submission.examVersion ?? session.examVersion ?? exam.version ?? 1,
           answers: session.answers,
           startedAt: session.startedAt,
           answerModes: session.answerModes,
           flaggedQuestions: session.flaggedQuestions,
           chapterLabels: session.chapterLabels,
           questionPages: session.questionPages,
+          answerKeySnapshot: submission.answers,
+          acceptedAnswersSnapshot: exam.acceptedAnswers ?? {},
+          questionCountSnapshot: exam.questionCount,
+          startQuestionSnapshot: exam.startQuestion ?? 1,
           score,
           submittedAt,
         };
@@ -210,7 +215,7 @@ function AuthenticatedApp({
           bestScore: session.isContentTest ? exam.bestScore : Math.max(exam.bestScore ?? 0, score),
         };
         await savePdfExam(updatedExam);
-        await savePdfExamSession({ ...session, attemptId: attempt.id, submitted: true, score, submittedAt });
+        await savePdfExamSession({ ...session, attemptId: attempt.id, examVersion: attempt.examVersion, submitted: true, score, submittedAt });
         if (!session.isContentTest) recordExamResult(createPdfExamRecord(updatedExam, attempt, updatedExam.answerKey, updatedExam.acceptedAnswers));
         setExamHistory(getExamHistory());
         setMistakes(getMistakeNotebook());
@@ -641,6 +646,8 @@ function AuthenticatedApp({
                 </div>
               </div>
             )}
+
+            <UserNotificationsBanner />
 
             {/* Target & Countdown Progress Bar Banner */}
             <div className="p-5 sm:p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
