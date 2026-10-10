@@ -331,26 +331,40 @@ export async function updateCloudExamMetadata(
   }
 }
 
-export async function submitCloudExam(examId: string, answers: Record<number, string>): Promise<{
+export async function submitCloudExam(examId: string, answers: Record<number, string>, isContentTest = false): Promise<{
   answers: Record<number, string>;
   solutionPath: string | null;
   examVersion: number | null;
 }> {
   if (!supabase) throw new Error('Supabase is not configured');
-  const { data, error } = await supabase.rpc('submit_exam', {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let response: any = await supabase.rpc('submit_exam', {
     exam_id: examId,
     answers,
+    p_is_content_test: isContentTest,
   });
+  // Supabase chưa chạy schema Giai đoạn 7 thì hàm 3 tham số chưa có; lùi về
+  // cách gọi cũ để lượt làm bài vẫn nộp được như trước.
+  if (response.error && /submit_exam|function/i.test(response.error.message ?? '')) {
+    response = await supabase.rpc('submit_exam', {
+      exam_id: examId,
+      answers,
+    });
+  }
+  const { data, error } = response as {
+    data: unknown;
+    error: { message?: string } | null;
+  };
   if (error) throw error;
-  const response = data as {
+  const payload = data as {
     answers: Record<number, string>;
     solution_path: string | null;
     exam_version?: number | null;
   };
   return {
-    answers: response.answers,
-    solutionPath: response.solution_path,
-    examVersion: response.exam_version ?? null,
+    answers: payload.answers,
+    solutionPath: payload.solution_path,
+    examVersion: payload.exam_version ?? null,
   };
 }
 

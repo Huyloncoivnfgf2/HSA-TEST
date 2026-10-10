@@ -64,6 +64,8 @@ import { ExamHistoryModal } from './components/ExamHistoryModal';
 import { PdfExamLibrary } from './components/PdfExamLibrary';
 import { createPdfExamRecord, PdfExamPlayer } from './components/PdfExamPlayer';
 import {
+  getAttemptKind,
+  getSessionAttemptKind,
   scorePdfAnswers,
   type PdfExam,
   type PdfExamAttempt,
@@ -187,7 +189,7 @@ function AuthenticatedApp({
         const exam = (await loadPdfExams()).find((item) => item.id === session.examId);
         if (!exam) throw new Error('The PDF exam for the expired session is missing');
         const submittedAt = Date.now();
-        const submission = await submitCloudExam(exam.id, session.answers);
+        const submission = await submitCloudExam(exam.id, session.answers, getSessionAttemptKind(session) === 'content-test');
         exam.answerKey = submission.answers;
         exam.solutionPath = submission.solutionPath ?? undefined;
         const score = scorePdfAnswers(session.answers, submission.answers, exam.questionCount, exam.acceptedAnswers, [], exam.startQuestion ?? 1);
@@ -195,6 +197,7 @@ function AuthenticatedApp({
           id: crypto.randomUUID(),
           mode: session.mode === 'review' ? 'study' : session.mode,
           isContentTest: session.isContentTest,
+          attemptKind: getSessionAttemptKind(session),
           examVersion: submission.examVersion ?? session.examVersion ?? exam.version ?? 1,
           answers: session.answers,
           startedAt: session.startedAt,
@@ -282,6 +285,7 @@ function AuthenticatedApp({
           examId: exam.id,
           mode: 'review',
           isContentTest: latestAttempt.isContentTest,
+          attemptKind: getAttemptKind(latestAttempt),
           examVersion: latestAttempt.examVersion ?? exam.version ?? 1,
           answers: latestAttempt.answers,
           attemptId: latestAttempt.id,
@@ -300,6 +304,7 @@ function AuthenticatedApp({
           examId: exam.id,
           mode,
           isContentTest: Boolean(options?.isContentTest),
+          attemptKind: options?.isContentTest ? 'content-test' : 'real',
           examVersion: exam.version ?? 1,
           answers: {},
           answerModes: {},

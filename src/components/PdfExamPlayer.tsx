@@ -418,7 +418,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
     setIsSubmitting(true);
     const submittedAt = Date.now();
     try {
-      const submission = await submitCloudExam(exam.id, currentSession.answers);
+      const submission = await submitCloudExam(exam.id, currentSession.answers, getSessionAttemptKind(currentSession) === 'content-test');
       const submittedExam = {
         ...exam,
         answerKey: submission.answers,
@@ -428,6 +428,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
       id: crypto.randomUUID(),
       mode: currentSession.mode,
       isContentTest: currentSession.isContentTest,
+      attemptKind: getSessionAttemptKind(currentSession),
       examVersion: submission.examVersion ?? currentSession.examVersion ?? exam.version ?? 1,
       answers: currentSession.answers,
       startedAt: currentSession.startedAt,
