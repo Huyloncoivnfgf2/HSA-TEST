@@ -18,8 +18,10 @@ import type {
 import type { ExamRecord, MistakeEntry } from '../types/analytics';
 import { SUBJECT_CONFIGS } from '../types/hsa';
 import {
+  attemptKindLabel,
   getAttemptAcceptedAnswers,
   getAttemptAnswerKey,
+  getSessionAttemptKind,
   getAttemptQuestionCount,
   getAttemptStartQuestion,
   isPdfAnswerCorrect,
@@ -982,7 +984,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
           <button type="button" onClick={onBack} aria-label="Quay lại thư viện" className="rounded-lg p-2 hover:bg-slate-100 dark:hover:bg-slate-800"><ArrowLeft className="h-4 w-4" /></button>
           <div className="min-w-0">
             <h1 className="truncate text-sm font-extrabold sm:text-base">{exam.title}</h1>
-            <p className="text-[10px] text-slate-500">{subject.shortName} · {session.mode === 'test' ? 'Kiểm tra' : session.mode === 'study' ? 'Ôn tập' : 'Xem lại'}</p>
+            <p className="text-[10px] text-slate-500">{subject.shortName} · {session.mode === 'test' ? 'Kiểm tra' : session.mode === 'study' ? 'Ôn tập' : 'Xem lại'} · {attemptKindLabel(getSessionAttemptKind(session))}{getSessionAttemptKind(session) === 'content-test' ? ' — không tính vào tiến độ học tập' : ''}</p>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">

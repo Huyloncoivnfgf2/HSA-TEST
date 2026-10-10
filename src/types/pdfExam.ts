@@ -29,6 +29,7 @@ export interface PdfExamAttempt {
   id: string;
   mode: PdfExamMode;
   isContentTest?: boolean;
+  attemptKind?: PdfAttemptKind;
   examVersion?: number;
   answers: Record<number, string>;
   score: number;
@@ -49,6 +50,35 @@ export interface PdfExamAttempt {
   originalScore?: number;
   regradedAt?: number;
   regradeCorrectionIds?: string[];
+}
+
+// Chế độ của một lượt làm bài PDF. `real` là luyện tập thật (tính vào tiến
+// độ học tập); `content-test` là lượt Owner kiểm thử nội dung đề, không tính
+// vào tiến độ. Lượt cũ chưa có cờ được hiểu là luyện tập thật.
+export type PdfAttemptKind = 'real' | 'content-test';
+
+export function getAttemptKind(attempt?: PdfExamAttempt | null): PdfAttemptKind {
+  if (!attempt) return 'real';
+  if (attempt.attemptKind) return attempt.attemptKind;
+  return attempt.isContentTest ? 'content-test' : 'real';
+}
+
+export function isContentTestAttempt(attempt?: PdfExamAttempt | null): boolean {
+  return getAttemptKind(attempt) === 'content-test';
+}
+
+export function getSessionAttemptKind(session?: PdfExamSession | null): PdfAttemptKind {
+  if (!session) return 'real';
+  if (session.attemptKind) return session.attemptKind;
+  return session.isContentTest ? 'content-test' : 'real';
+}
+
+export function isContentTestSession(session?: PdfExamSession | null): boolean {
+  return getSessionAttemptKind(session) === 'content-test';
+}
+
+export function attemptKindLabel(kind: PdfAttemptKind): string {
+  return kind === 'content-test' ? 'Kiểm thử nội dung' : 'Luyện tập thật';
 }
 
 export function getAttemptAnswerKey(
@@ -112,6 +142,7 @@ export interface PdfExamSession {
   attemptId?: string;
   mode: PdfExamMode;
   isContentTest?: boolean;
+  attemptKind?: PdfAttemptKind;
   examVersion?: number;
   answers: Record<number, string>;
   answerModes: Record<number, PdfAnswerMode>;

@@ -631,12 +631,17 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart, isAdmin
                 </div>
               );
             })()}
-            {isAdmin && (
-              <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-slate-200 p-3 text-xs dark:border-slate-700">
-                <input type="checkbox" checked={contentTest} onChange={(event) => setContentTest(event.target.checked)} className="mt-0.5" />
-                <span><strong>Kiểm thử nội dung</strong> — lượt này chỉ để Owner kiểm tra đề/đáp án, không tính vào điểm cao nhất, lịch sử, Sổ lỗi hay ôn tập FSRS.</span>
+            <fieldset className="space-y-2">
+              <legend className="text-xs font-bold text-slate-600 dark:text-slate-300">Chế độ của lượt này</legend>
+              <label className={`flex cursor-pointer items-start gap-2 rounded-xl border p-3 text-xs ${!contentTest ? 'border-emerald-400 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30' : 'border-slate-200 dark:border-slate-700'}`}>
+                <input type="radio" name="pdf-attempt-kind" checked={!contentTest} onChange={() => setContentTest(false)} className="mt-0.5" />
+                <span><strong>Luyện tập thật</strong> — lượt này tính vào điểm cao nhất, lịch sử, Sổ lỗi và ôn tập FSRS như bình thường.</span>
               </label>
-            )}
+              <label className={`flex items-start gap-2 rounded-xl border p-3 text-xs ${isAdmin ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'} ${isAdmin && contentTest ? 'border-amber-400 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30' : 'border-slate-200 dark:border-slate-700'}`}>
+                <input type="radio" name="pdf-attempt-kind" checked={contentTest} disabled={!isAdmin} onChange={() => setContentTest(true)} className="mt-0.5" />
+                <span><strong>Kiểm thử nội dung</strong> — chỉ Owner dùng để kiểm tra đề/đáp án; không tính vào điểm cao nhất, lịch sử, Sổ lỗi hay ôn tập FSRS.{!isAdmin && ' Tài khoản người học không dùng chế độ này.'}</span>
+              </label>
+            </fieldset>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <button type="button" disabled={!contentTest && !getPdfExamReadiness(modeExam, { requireAnswerKey: isAdmin }).readyForNewAttempt} onClick={() => { setModeExam(null); onStart(modeExam, 'test', { isContentTest: contentTest }); }} className="rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-40">Kiểm tra · {SUBJECT_CONFIGS[modeExam.subject].durationMinutes} phút</button>
               <button type="button" disabled={!contentTest && !getPdfExamReadiness(modeExam, { requireAnswerKey: isAdmin }).readyForNewAttempt} onClick={() => { setModeExam(null); onStart(modeExam, 'study', { isContentTest: contentTest }); }} className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:hover:bg-slate-800">Ôn tập · không giới hạn giờ</button>
