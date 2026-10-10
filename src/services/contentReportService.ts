@@ -175,15 +175,43 @@ export async function listMyContentReports(): Promise<ContentReport[]> {
 export async function updateContentReport(
   report: ContentReport,
   updates: { status: ContentReportStatus; ownerNote: string; duplicateOf?: string | null }
-): Promise<void> {
+): Promise<{ notificationSent: boolean }> {
   if (!supabase) throw new Error('Supabase chưa được cấu hình.');
+  const ownerNote = updates.ownerNote.trim() || null;
   const { error } = await supabase.from('content_reports').update({
     status: updates.status,
-    owner_note: updates.ownerNote.trim() || null,
+    owner_note: ownerNote,
     duplicate_of: updates.status === 'duplicate' ? updates.duplicateOf ?? report.duplicateOf : report.duplicateOf,
     resolved_at: updates.status === 'resolved' ? new Date().toISOString() : null,
   }).eq('id', report.id);
   if (error) throw friendlyReportError(error);
+
+  const handlingChanged = updates.status !== report.status || ownerNote !== report.ownerNote;
+  if (!handlingChanged) return { notificationSent: true };
+
+  try {
+    const { data: userData } = await supabase.auth.getUser();
+    if (userData.user?.id === report.reporterId) return { notificationSent: true };
+    const statusText = reportStatusLabel(updates.status);
+    const { error: notificationError } = await supabase.from('user_notifications').insert({
+      recipient_id: report.reporterId,
+      type: 'content_report_update',
+      title: `Báo lỗi câu ${report.questionNumber} — ${statusText}`,
+      body: ownerNote
+        ? `${report.examTitle}: ${ownerNote}`
+        : `${report.examTitle}: Owner đã cập nhật trạng thái báo lỗi của bạn thành “${statusText}”.`,
+      exam_id: report.examId,
+      report_id: report.id,
+      created_by: userData.user?.id ?? null,
+    });
+    if (notificationError) throw notificationError;
+    return { notificationSent: true };
+  } catch (notificationError) {
+    // Báo lỗi đã được lưu xử lý; lỗi gửi thông báo riêng không được làm Owner
+    // tưởng rằng toàn bộ thao tác thất bại.
+    console.warn('Could not send the private report notification:', notificationError);
+    return { notificationSent: false };
+  }
 }
 
 export function reportStatusLabel(status: ContentReportStatus): string {

@@ -9,6 +9,13 @@ import {
   type ContentReport,
   type ContentReportStatus,
 } from '../services/contentReportService';
+import {
+  listExamCorrections,
+  regradeDecisionLabel,
+  updateExamCorrectionDecision,
+  type ExamCorrection,
+  type RegradeDecision,
+} from '../services/examCorrectionService';
 
 interface ContentReportsModalProps {
   isOpen: boolean;
@@ -17,20 +24,35 @@ interface ContentReportsModalProps {
 
 export const ContentReportsModal: React.FC<ContentReportsModalProps> = ({ isOpen, onClose }) => {
   const [reports, setReports] = useState<ContentReport[]>([]);
+  const [corrections, setCorrections] = useState<ExamCorrection[]>([]);
   const [statusFilter, setStatusFilter] = useState<'all' | ContentReportStatus>('pending');
   const [drafts, setDrafts] = useState<Record<string, { status: ContentReportStatus; ownerNote: string; duplicateOf: string }>>({});
+  const [correctionDrafts, setCorrectionDrafts] = useState<Record<string, Exclude<RegradeDecision, 'pending'>>>({});
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
+  const [savedCorrectionId, setSavedCorrectionId] = useState<string | null>(null);
 
   const load = async () => {
     try {
-      const loaded = await listOwnerContentReports();
+      const [loaded, loadedCorrections] = await Promise.all([
+        listOwnerContentReports(),
+        listExamCorrections().catch((correctionError: unknown) => {
+          console.warn('Could not load exam corrections:', correctionError);
+          return [] as ExamCorrection[];
+        }),
+      ]);
       setReports(loaded);
+      setCorrections(loadedCorrections);
       setDrafts(Object.fromEntries(loaded.map((report) => [report.id, {
         status: report.status,
         ownerNote: report.ownerNote ?? '',
         duplicateOf: report.duplicateOf ?? '',
       }])));
+      setCorrectionDrafts(Object.fromEntries(loadedCorrections.map((correction) => [
+        correction.id,
+        correction.regradeDecision === 'requested' ? 'requested' : 'not_requested',
+      ])));
       setError(null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Không thể tải hàng đợi báo lỗi.');
@@ -51,15 +73,32 @@ export const ContentReportsModal: React.FC<ContentReportsModalProps> = ({ isOpen
   const save = async (report: ContentReport) => {
     const draft = drafts[report.id] ?? { status: report.status, ownerNote: report.ownerNote ?? '', duplicateOf: report.duplicateOf ?? '' };
     try {
-      await updateContentReport(report, {
+      const result = await updateContentReport(report, {
         status: draft.status,
         ownerNote: draft.ownerNote,
         duplicateOf: draft.duplicateOf || null,
       });
       setSavedId(report.id);
+      setNotice(result.notificationSent
+        ? 'Đã lưu xử lý và gửi thông báo riêng cho người báo.'
+        : 'Đã lưu xử lý, nhưng chưa gửi được thông báo riêng. Kiểm tra schema Supabase rồi thử lưu lại khi cần.');
       await load();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Không thể cập nhật báo lỗi.');
+    }
+  };
+
+  const saveCorrectionDecision = async (correction: ExamCorrection) => {
+    const decision = correctionDrafts[correction.id] ?? 'not_requested';
+    try {
+      await updateExamCorrectionDecision(correction, decision);
+      setSavedCorrectionId(correction.id);
+      setNotice(decision === 'requested'
+        ? 'Đã ghi quyết định chấm lại. Người học sẽ được áp dụng khi mở lại lượt làm của đề này.'
+        : 'Đã ghi quyết định chỉ áp dụng cho lượt mới; lượt đã nộp giữ nguyên điểm.');
+      await load();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Không thể lưu quyết định chấm lại.');
     }
   };
 
@@ -82,6 +121,55 @@ export const ContentReportsModal: React.FC<ContentReportsModalProps> = ({ isOpen
             </select>
           </label>
           {error && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-xs text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{error}</p>}
+          {notice && <p className="rounded-xl bg-emerald-50 p-3 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">{notice}</p>}
+
+          <section aria-label="Sửa lỗi và quyết định chấm lại" className="space-y-3 rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4 dark:border-indigo-900 dark:bg-indigo-950/20">
+            <div>
+              <h3 className="text-sm font-extrabold">Sửa lỗi và quyết định chấm lại</h3>
+              <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-slate-300">
+                Mỗi bản sửa đáp án tạo một phiên bản mới. Lượt đã nộp chỉ đổi điểm khi Owner chọn chấm lại; quyết định này không gửi thông báo hàng loạt.
+              </p>
+            </div>
+            {corrections.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-indigo-200 bg-white/60 p-4 text-center text-xs text-slate-500 dark:border-indigo-900 dark:bg-slate-900/40">Chưa có bản sửa nội dung nào được ghi nhận.</p>
+            ) : corrections.map((correction) => {
+              const decision = correctionDrafts[correction.id] ?? 'not_requested';
+              return (
+                <article key={correction.id} className="space-y-3 rounded-xl border border-indigo-100 bg-white p-4 dark:border-indigo-900 dark:bg-slate-900">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <h4 className="text-sm font-extrabold">{correction.examTitle} · v{correction.fromVersion} → v{correction.toVersion}</h4>
+                      <p className="mt-1 text-[11px] leading-5 text-slate-500">
+                        {correction.changeType === 'answer_key' ? 'Sửa đáp án' : correction.changeType === 'question_range' ? 'Sửa khoảng câu' : 'Sửa thông tin đề'}
+                        {correction.changedQuestions.length ? ` · Câu ${correction.changedQuestions.join(', ')}` : ''}
+                        {' '}· {new Date(correction.createdAt).toLocaleString('vi-VN')}
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-indigo-50 px-2 py-1 text-[11px] font-bold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">{regradeDecisionLabel(correction.regradeDecision)}</span>
+                  </div>
+                  <p className="rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-600 dark:bg-slate-800/70 dark:text-slate-300">
+                    Ảnh hưởng ước tính trên cloud: {correction.affectedSubmissionCount ?? 'chưa có số liệu'} bài nộp · {correction.affectedLearnerCount ?? 'chưa có số liệu'} người học · {correction.potentiallyChangedCount ?? 'chưa có số liệu'} bài có thể đổi kết quả ở các câu đã sửa.
+                    {typeof correction.impactDetails.earliestSubmissionAt === 'string' && typeof correction.impactDetails.latestSubmissionAt === 'string' && (
+                      <> Khoảng bài nộp đã có: {new Date(correction.impactDetails.earliestSubmissionAt).toLocaleDateString('vi-VN')} – {new Date(correction.impactDetails.latestSubmissionAt).toLocaleDateString('vi-VN')}.</>
+                    )}
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+                    <label className="block space-y-1 text-xs font-bold text-slate-600 dark:text-slate-300">
+                      Quyết định của Owner
+                      <select value={decision} onChange={(event) => setCorrectionDrafts((current) => ({ ...current, [correction.id]: event.target.value as Exclude<RegradeDecision, 'pending'> }))} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal dark:border-slate-700 dark:bg-slate-800">
+                        <option value="not_requested">Chỉ áp dụng cho lượt mới</option>
+                        <option value="requested">Chấm lại các lượt đã nộp</option>
+                      </select>
+                    </label>
+                    <button type="button" onClick={() => void saveCorrectionDecision(correction)} className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-700">
+                      {savedCorrectionId === correction.id ? 'Đã lưu quyết định' : 'Lưu quyết định'}
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </section>
+
           {visibleReports.length === 0 ? (
             <p className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-xs text-slate-500 dark:border-slate-700">Chưa có báo lỗi ở trạng thái này.</p>
           ) : visibleReports.map((report) => {
