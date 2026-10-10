@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { UserGoals } from '../types/analytics';
+import React, { useEffect, useState } from 'react';
+import { DEFAULT_GOALS, UserGoals } from '../types/analytics';
 import {
   X,
   Target,
@@ -38,7 +38,22 @@ export const GoalSettingsModal: React.FC<GoalSettingsModalProps> = ({
     goals.dailyQuestionGoal || 20
   );
 
+  // Mỗi lần mở lại, form phải phản ánh đúng mục tiêu đang lưu, kể cả khi mục
+  // tiêu vừa được đổi từ nơi khác (Task 8.6).
+  useEffect(() => {
+    if (!isOpen) return;
+    setTargetMath(goals.targetMath);
+    setTargetLiterature(goals.targetLiterature);
+    setTargetScience(goals.targetScience);
+    setExamDate(goals.examDate || new Date(Date.now() + 45 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
+    setMaxScorePerSubject(goals.maxScorePerSubject || 50);
+    setScaleFactor(goals.scaleFactor || 1);
+    setDailyQuestionGoal(goals.dailyQuestionGoal || 20);
+  }, [isOpen, goals]);
+
   if (!isOpen) return null;
+
+  const examDatePassed = Boolean(examDate) && new Date(examDate).getTime() < new Date(new Date().toISOString().slice(0, 10)).getTime();
 
   const targetTotal = targetMath + targetLiterature + targetScience;
 
@@ -53,18 +68,37 @@ export const GoalSettingsModal: React.FC<GoalSettingsModalProps> = ({
 
   const daysLeft = calculateDaysLeft();
 
+  const clamp = (value: number, min: number, max: number) =>
+    Math.min(max, Math.max(min, Number.isFinite(value) ? value : min));
+
   const handleSave = () => {
+    const safeMaxScore = clamp(maxScorePerSubject, 10, 100);
+    const safeMath = clamp(targetMath, 0, safeMaxScore);
+    const safeLiterature = clamp(targetLiterature, 0, safeMaxScore);
+    const safeScience = clamp(targetScience, 0, safeMaxScore);
     onSaveGoals({
-      targetMath,
-      targetLiterature,
-      targetScience,
-      targetTotal,
+      targetMath: safeMath,
+      targetLiterature: safeLiterature,
+      targetScience: safeScience,
+      // Tổng mục tiêu luôn bằng tổng 3 phần, không lưu một số tổng riêng lẻ
+      // mâu thuẫn với từng phần.
+      targetTotal: safeMath + safeLiterature + safeScience,
       examDate,
-      maxScorePerSubject,
-      scaleFactor,
-      dailyQuestionGoal,
+      maxScorePerSubject: safeMaxScore,
+      scaleFactor: scaleFactor || 1,
+      dailyQuestionGoal: clamp(dailyQuestionGoal, 1, 200),
     });
     onClose();
+  };
+
+  const handleResetDefaults = () => {
+    setTargetMath(DEFAULT_GOALS.targetMath);
+    setTargetLiterature(DEFAULT_GOALS.targetLiterature);
+    setTargetScience(DEFAULT_GOALS.targetScience);
+    setExamDate(DEFAULT_GOALS.examDate ?? '');
+    setMaxScorePerSubject(DEFAULT_GOALS.maxScorePerSubject);
+    setScaleFactor(DEFAULT_GOALS.scaleFactor);
+    setDailyQuestionGoal(DEFAULT_GOALS.dailyQuestionGoal);
   };
 
   return (
@@ -112,6 +146,11 @@ export const GoalSettingsModal: React.FC<GoalSettingsModalProps> = ({
             onChange={(e) => setExamDate(e.target.value)}
             className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200"
           />
+          {examDatePassed && (
+            <p className="text-[11px] font-semibold text-rose-600 dark:text-rose-400">
+              Ngày thi đã qua. Hãy cập nhật ngày thi mới để phần đếm ngược và cảnh báo mục tiêu (Task 8.7) tính đúng.
+            </p>
+          )}
         </div>
 
         {/* Target Scores */}
@@ -228,6 +267,13 @@ export const GoalSettingsModal: React.FC<GoalSettingsModalProps> = ({
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+          <button
+            type="button"
+            onClick={handleResetDefaults}
+            className="mr-auto px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl"
+          >
+            Khôi phục mặc định
+          </button>
           <button
             type="button"
             onClick={onClose}
