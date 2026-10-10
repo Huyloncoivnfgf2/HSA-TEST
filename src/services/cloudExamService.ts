@@ -40,7 +40,7 @@ function cloudSolutionPath(exam: PdfExam): string {
 }
 
 const EXAM_SELECT_WITH_MANAGEMENT =
-  'id,title,section,question_count,pdf_path,original_filename,file_id,page_start,page_end,start_question,status,version,created_at,updated_at';
+  'id,title,section,system,question_count,pdf_path,original_filename,file_id,page_start,page_end,start_question,status,version,created_at,updated_at';
 const EXAM_SELECT_LEGACY = 'id,title,section,question_count,pdf_path,created_at,updated_at';
 
 function isMissingManagementColumn(error: unknown): boolean {
@@ -150,6 +150,7 @@ export async function loadCloudExamLibrary(isAdmin = false): Promise<PdfExam[]> 
       id: record.id,
       title: record.title,
       subject: subjectForSection[record.section],
+      system: record.system ?? 'hsa',
       createdAt: Date.parse(record.created_at),
       updatedAt: cloudUpdatedAt,
       questionCount: record.question_count,
@@ -262,6 +263,7 @@ export async function updateCloudExamMetadata(
   const managementUpdate = {
     title: exam.title,
     section: sectionForSubject[exam.subject],
+    system: exam.system ?? 'hsa',
     question_count: exam.questionCount,
     original_filename: exam.originalFileName ?? exam.pdfFileName,
     file_id: exam.fileId ?? null,
@@ -404,6 +406,7 @@ export async function uploadLocalExams(
         id: exam.id,
         title: exam.title,
         section: sectionForSubject[exam.subject],
+        system: exam.system ?? 'hsa',
         question_count: exam.questionCount,
         pdf_path: pdfPath,
         solution_path: solutionPath,

@@ -18,6 +18,7 @@ export type CloudExamRecord = {
   id: string;
   title: string;
   section: 'dinh_luong' | 'dinh_tinh' | 'khoa_hoc';
+  system?: 'hsa' | 'tsa' | 'thpt' | null;
   question_count: number;
   pdf_path: string;
   original_filename?: string | null;

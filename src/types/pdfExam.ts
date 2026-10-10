@@ -120,6 +120,7 @@ export interface PdfExam {
   id: string;
   title: string;
   subject: PdfSubject;
+  system?: import('./examSystems').ExamSystemId;
   createdAt: number;
   updatedAt?: number;
   questionCount: number;
