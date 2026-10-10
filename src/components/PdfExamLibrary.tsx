@@ -179,7 +179,7 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart, isAdmin
       const updatedExam = { ...answerKeyExam, answerKey: answerKeyRows };
       await savePdfExam(updatedExam);
       if (updatedExam.updatedAt) {
-        await saveCloudAnswerKey(updatedExam);
+        await saveCloudAnswerKey(updatedExam, { previousAnswerKey: answerKeyExam.answerKey });
       } else {
         await uploadLocalExams([updatedExam], () => undefined);
       }
@@ -296,7 +296,7 @@ export const PdfExamLibrary: React.FC<PdfExamLibraryProps> = ({ onStart, isAdmin
         status: editingStatus,
       };
       await savePdfExam(updated);
-      if (updated.updatedAt) await updateCloudExamMetadata(updated);
+      if (updated.updatedAt) await updateCloudExamMetadata(updated, exam);
       await reloadExams();
       setEditingExamId(null);
       setError(null);

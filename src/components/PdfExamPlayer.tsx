@@ -18,6 +18,10 @@ import type {
 import type { ExamRecord, MistakeEntry } from '../types/analytics';
 import { SUBJECT_CONFIGS } from '../types/hsa';
 import {
+  getAttemptAcceptedAnswers,
+  getAttemptAnswerKey,
+  getAttemptQuestionCount,
+  getAttemptStartQuestion,
   isPdfAnswerCorrect,
   parsePdfAnswerKey,
   pdfQuestionNumbers,
@@ -50,6 +54,11 @@ import {
   savePdfPageAnnotations,
 } from '../services/indexedDbService';
 import { getCloudSolutionUrl, saveCloudAnswerKey, submitCloudExam } from '../services/cloudExamService';
+import {
+  getSubmittedExamAnswerKey,
+  listExamCorrections,
+  type RegradeDecision,
+} from '../services/examCorrectionService';
 import { ExamToolbar } from './ExamToolbar';
 import { PdfContentReportModal } from './PdfContentReportModal';
 import { ScratchpadDrawer } from './ScratchpadDrawer';
@@ -86,24 +95,29 @@ export function createPdfExamRecord(
   answerKey: Record<number, string>,
   acceptedAnswers: Record<number, string[]> = {}
 ): ExamRecord {
-  const startQuestion = exam.startQuestion ?? 1;
+  // Lượt đã nộp luôn được dựng lại từ ảnh chụp đáp án tại thời điểm nộp.
+  // Bộ đáp án hiện tại chỉ thay ảnh chụp sau khi Owner quyết định chấm lại.
+  const gradingAnswerKey = getAttemptAnswerKey(exam, attempt);
+  const gradingAcceptedAnswers = getAttemptAcceptedAnswers(exam, attempt);
+  const startQuestion = getAttemptStartQuestion(exam, attempt);
+  const questionCount = getAttemptQuestionCount(exam, attempt);
   const subjectScore = scorePdfAnswers(
     attempt.answers,
-    answerKey,
-    exam.questionCount,
-    acceptedAnswers,
+    gradingAnswerKey,
+    questionCount,
+    gradingAcceptedAnswers,
     attempt.overriddenCorrect,
     startQuestion
   );
-  const scoreable = scoreablePdfQuestionCount(answerKey, exam.questionCount, startQuestion);
-  const details = Array.from({ length: exam.questionCount }, (_, index) => startQuestion + index)
-    .filter((number) => !!answerKey[number])
+  const scoreable = scoreablePdfQuestionCount(gradingAnswerKey, questionCount, startQuestion);
+  const details = Array.from({ length: questionCount }, (_, index) => startQuestion + index)
+    .filter((number) => !!gradingAnswerKey[number])
     .map((number) => {
       const correct = isPdfAnswerCorrect(
         number,
         attempt.answers[number],
-        answerKey,
-        acceptedAnswers,
+        gradingAnswerKey,
+        gradingAcceptedAnswers,
         attempt.overriddenCorrect
       ) === true;
       return {
@@ -111,7 +125,7 @@ export function createPdfExamRecord(
         subject: exam.subject,
         subTopic: attempt.chapterLabels?.[number]?.trim() || 'Tổng hợp',
         userAnswer: attempt.answers[number] ?? '',
-        correctAnswer: answerKey[number],
+        correctAnswer: gradingAnswerKey[number],
         isCorrect: correct,
         timeSpentSeconds: 0,
         errorType: correct ? undefined : attempt.answers[number] ? 'sai kiến thức' as const : 'bỏ trống' as const,
@@ -176,6 +190,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
   const [editingAnswerKey, setEditingAnswerKey] = useState(false);
   const [answerKeyDraft, setAnswerKeyDraft] = useState('');
   const [answerKeyRows, setAnswerKeyRows] = useState<Record<number, string>>({});
+  const [correctionDecision, setCorrectionDecision] = useState<Exclude<RegradeDecision, 'pending'>>('not_requested');
   const [appealQuestion, setAppealQuestion] = useState<number | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
   const savingAnswersTimer = useRef<number | undefined>(undefined);
@@ -228,13 +243,83 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
         ? activeSession.answers
         : !activeSession ? latestAttempt?.answers : undefined;
       if (submittedAnswers && Object.keys(foundExam.answerKey).length === 0) {
-        const result = await submitCloudExam(examId, submittedAnswers);
-        foundExam = {
-          ...foundExam,
-          answerKey: result.answers,
-          solutionPath: result.solutionPath ?? undefined,
-        };
-        await savePdfExam(foundExam);
+        try {
+          const submittedAnswerKey = await getSubmittedExamAnswerKey(examId);
+          if (submittedAnswerKey) {
+            foundExam = {
+              ...foundExam,
+              answerKey: submittedAnswerKey,
+            };
+            await savePdfExam(foundExam);
+          }
+        } catch (keyError) {
+          // Không nộp lại bài chỉ để lấy đáp án; làm vậy sẽ tạo bài nộp trùng.
+          console.warn('Could not load the submitted exam answer key:', keyError);
+        }
+      }
+
+      try {
+        const requestedCorrections = (await listExamCorrections(examId))
+          .filter((correction) => correction.regradeDecision === 'requested');
+        if (requestedCorrections.length && foundExam.attempts.length) {
+          const examBeforeCorrections = foundExam;
+          const submittedAnswerKey = await getSubmittedExamAnswerKey(examId).catch(() => null);
+          const currentAnswerKey = submittedAnswerKey && Object.keys(submittedAnswerKey).length
+            ? submittedAnswerKey
+            : examBeforeCorrections.answerKey;
+          if (Object.keys(currentAnswerKey).length) {
+            let correctionChangedAttempts = false;
+            const correctedAttempts = foundExam.attempts.map((attempt) => {
+              const applicableCorrections = requestedCorrections.filter((correction) =>
+                (attempt.examVersion ?? 1) < correction.toVersion &&
+                !(attempt.regradeCorrectionIds ?? []).includes(correction.id)
+              );
+              if (!applicableCorrections.length) return attempt;
+              correctionChangedAttempts = true;
+              const correctedAttempt: PdfExamAttempt = {
+                ...attempt,
+                originalScore: attempt.originalScore ?? attempt.score,
+                answerKeySnapshot: currentAnswerKey,
+                acceptedAnswersSnapshot: attempt.acceptedAnswersSnapshot ?? examBeforeCorrections.acceptedAnswers ?? {},
+                regradedAt: Date.now(),
+                regradeCorrectionIds: [
+                  ...new Set([
+                    ...(attempt.regradeCorrectionIds ?? []),
+                    ...applicableCorrections.map((correction) => correction.id),
+                  ]),
+                ],
+              };
+              correctedAttempt.score = scorePdfAnswers(
+                correctedAttempt.answers,
+                currentAnswerKey,
+                getAttemptQuestionCount(examBeforeCorrections, correctedAttempt),
+                getAttemptAcceptedAnswers(examBeforeCorrections, correctedAttempt),
+                correctedAttempt.overriddenCorrect,
+                getAttemptStartQuestion(examBeforeCorrections, correctedAttempt)
+              );
+              return correctedAttempt;
+            });
+            if (correctionChangedAttempts) {
+              foundExam = {
+                ...foundExam,
+                answerKey: currentAnswerKey,
+                attempts: correctedAttempts,
+                bestScore: correctedAttempts.some((attempt) => !attempt.isContentTest)
+                  ? Math.max(0, ...correctedAttempts.filter((attempt) => !attempt.isContentTest).map((attempt) => attempt.score))
+                  : foundExam.bestScore,
+              };
+              await savePdfExam(foundExam);
+              for (const attempt of [...correctedAttempts].sort((a, b) => a.submittedAt - b.submittedAt)) {
+                if (attempt.isContentTest) continue;
+                replacePdfExamResult(createPdfExamRecord(foundExam, attempt, currentAnswerKey, foundExam.acceptedAnswers));
+              }
+              onResultsChanged(getExamHistory(), getMistakeNotebook());
+            }
+          }
+        }
+      } catch (correctionError) {
+        // Chưa chạy schema Giai đoạn 6 thì vẫn mở được bài như trước.
+        console.warn('Could not apply requested exam corrections:', correctionError);
       }
       setExam(foundExam);
       const annotationsByPage: Record<number, PdfAnnotationStroke[]> = {};
@@ -262,6 +347,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
         setSession({
           ...activeSession,
           attemptId: activeSession.attemptId ?? matchingAttempt?.id,
+          score: matchingAttempt?.score ?? activeSession.score,
           answerModes: activeSession.answerModes ?? {},
           flaggedQuestions: activeSession.flaggedQuestions ?? {},
           chapterLabels: activeSession.chapterLabels ?? {},
@@ -340,13 +426,17 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
       id: crypto.randomUUID(),
       mode: currentSession.mode,
       isContentTest: currentSession.isContentTest,
-      examVersion: currentSession.examVersion ?? exam.version ?? 1,
+      examVersion: submission.examVersion ?? currentSession.examVersion ?? exam.version ?? 1,
       answers: currentSession.answers,
       startedAt: currentSession.startedAt,
       answerModes: currentSession.answerModes,
       flaggedQuestions: currentSession.flaggedQuestions,
       chapterLabels: currentSession.chapterLabels,
       questionPages: currentSession.questionPages,
+      answerKeySnapshot: submission.answers,
+      acceptedAnswersSnapshot: exam.acceptedAnswers ?? {},
+      questionCountSnapshot: exam.questionCount,
+      startQuestionSnapshot: exam.startQuestion ?? 1,
       score: scorePdfAnswers(
         currentSession.answers,
         submittedExam.answerKey,
@@ -365,6 +455,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
       const submittedSession: PdfExamSession = {
       ...currentSession,
       attemptId: attempt.id,
+      examVersion: attempt.examVersion,
       submitted: true,
       score: attempt.score,
       submittedAt,
@@ -509,55 +600,46 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
 
   const appealFillAnswer = async (number: number) => {
     if (!exam || !session?.submitted || !session.attemptId || !session.answers[number]) return;
-    const variants = exam.acceptedAnswers?.[number] ?? [];
-    const answer = session.answers[number].trim();
-    if (!variants.some((variant) => variant.trim().toUpperCase() === answer.toUpperCase())) {
-      const updatedExam = {
-        ...exam,
-        acceptedAnswers: {
-          ...exam.acceptedAnswers,
-          [number]: [...variants, answer],
-        },
-      };
-      const attempts = updatedExam.attempts.map((attempt) => ({
-        ...attempt,
-        score: scorePdfAnswers(
-          attempt.answers,
-          updatedExam.answerKey,
-          updatedExam.questionCount,
-          updatedExam.acceptedAnswers,
-          attempt.overriddenCorrect
-        ),
-      }));
-      const regradedExam = {
-        ...updatedExam,
-        attempts,
-        bestScore: attempts.some((attempt) => !attempt.isContentTest) ? Math.max(0, ...attempts.filter((attempt) => !attempt.isContentTest).map((attempt) => attempt.score)) : exam.bestScore,
-      };
-      const currentAttempt = attempts.find((attempt) => attempt.id === session.attemptId);
-      if (!currentAttempt) return;
-      const nextSession = { ...session, score: currentAttempt.score };
-      try {
-        await savePdfExam(regradedExam);
-        await savePdfExamSession(nextSession);
-        setExam(regradedExam);
-        setSession(nextSession);
-        const sorted = [...attempts].sort((a, b) => a.submittedAt - b.submittedAt);
-        let history = getExamHistory();
-        for (const attempt of sorted) {
-          if (attempt.isContentTest) continue;
-          history = replacePdfExamResult(createPdfExamRecord(
-            regradedExam,
-            attempt,
-            regradedExam.answerKey,
-            regradedExam.acceptedAnswers
-          ));
-        }
-        handleResultsUpdated();
-      } catch (error) {
-        console.error('Could not apply the accepted answer:', error);
-        setStorageError('Không thể lưu đáp án được chấp nhận.');
+    const currentAttempt = exam.attempts.find((attempt) => attempt.id === session.attemptId);
+    if (!currentAttempt) return;
+    const overriddenCorrect = [...new Set([...(currentAttempt.overriddenCorrect ?? []), number])];
+    const correctedAttempt: PdfExamAttempt = { ...currentAttempt, overriddenCorrect };
+    correctedAttempt.score = scorePdfAnswers(
+      correctedAttempt.answers,
+      getAttemptAnswerKey(exam, correctedAttempt),
+      getAttemptQuestionCount(exam, correctedAttempt),
+      getAttemptAcceptedAnswers(exam, correctedAttempt),
+      correctedAttempt.overriddenCorrect,
+      getAttemptStartQuestion(exam, correctedAttempt)
+    );
+    // “Tôi đúng” chỉ là phúc khảo cho đúng lượt này. Nó không sửa đáp án chuẩn
+    // cho cả đề và không tự chấm lại các lượt khác.
+    const attempts = exam.attempts.map((attempt) => attempt.id === correctedAttempt.id ? correctedAttempt : attempt);
+    const updatedExam = {
+      ...exam,
+      attempts,
+      bestScore: attempts.some((attempt) => !attempt.isContentTest)
+        ? Math.max(0, ...attempts.filter((attempt) => !attempt.isContentTest).map((attempt) => attempt.score))
+        : exam.bestScore,
+    };
+    const nextSession = { ...session, score: correctedAttempt.score };
+    try {
+      await savePdfExam(updatedExam);
+      await savePdfExamSession(nextSession);
+      setExam(updatedExam);
+      setSession(nextSession);
+      if (!correctedAttempt.isContentTest) {
+        replacePdfExamResult(createPdfExamRecord(
+          updatedExam,
+          correctedAttempt,
+          getAttemptAnswerKey(updatedExam, correctedAttempt),
+          getAttemptAcceptedAnswers(updatedExam, correctedAttempt)
+        ));
       }
+      handleResultsUpdated();
+    } catch (error) {
+      console.error('Could not apply the answer appeal:', error);
+      setStorageError('Không thể lưu phúc khảo cho câu này.');
     }
     setAppealQuestion(null);
   };
@@ -586,44 +668,77 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
       setStorageError(`Câu đáp án bị nhập trùng: ${diagnostics.duplicates.join(', ')}.`);
       return;
     }
-    if (!window.confirm('Lưu đáp án mới và chấm lại bài đã nộp?')) return;
-    const updatedExam = { ...exam, answerKey: answerKeyRows };
-    const attempts = updatedExam.attempts.map((attempt) => ({
-      ...attempt,
-      score: scorePdfAnswers(
-        attempt.answers,
-        answerKeyRows,
-        exam.questionCount,
-        updatedExam.acceptedAnswers,
-        attempt.overriddenCorrect,
-        exam.startQuestion ?? 1
-      ),
-    }));
-    const regradedExam = {
-      ...updatedExam,
-      attempts,
-      bestScore: attempts.some((attempt) => !attempt.isContentTest) ? Math.max(0, ...attempts.filter((attempt) => !attempt.isContentTest).map((attempt) => attempt.score)) : exam.bestScore,
-    };
-    const currentAttempt = attempts.find((attempt) => attempt.id === session.attemptId);
-    if (!currentAttempt) return;
-    const nextSession = { ...session, score: currentAttempt.score };
+    const changedQuestions = pdfQuestionNumbers(exam.questionCount, exam.startQuestion ?? 1)
+      .filter((questionNumber) => exam.answerKey[questionNumber] !== answerKeyRows[questionNumber]);
+    if (!changedQuestions.length) {
+      setStorageError('Chưa có đáp án nào thay đổi.');
+      return;
+    }
+    const shouldRegrade = correctionDecision === 'requested';
+    const confirmation = shouldRegrade
+      ? 'Lưu đáp án đã sửa ở phiên bản mới và chấm lại các lượt đã nộp?'
+      : 'Lưu đáp án đã sửa ở phiên bản mới? Các lượt đã nộp giữ nguyên điểm; chỉ lượt mới dùng đáp án này.';
+    if (!window.confirm(confirmation)) return;
+
     try {
-      await savePdfExam(regradedExam);
-      if (isAdmin) await saveCloudAnswerKey(regradedExam);
+      let savedVersion = exam.version ?? 1;
+      if (isAdmin) {
+        savedVersion = await saveCloudAnswerKey(
+          { ...exam, answerKey: answerKeyRows },
+          { previousAnswerKey: exam.answerKey, regradeDecision: correctionDecision }
+        );
+      }
+      const correctedExam: PdfExam = {
+        ...exam,
+        answerKey: answerKeyRows,
+        version: savedVersion,
+      };
+      const attempts = shouldRegrade
+        ? correctedExam.attempts.map((attempt) => {
+            const correctedAttempt: PdfExamAttempt = {
+              ...attempt,
+              originalScore: attempt.originalScore ?? attempt.score,
+              answerKeySnapshot: answerKeyRows,
+              acceptedAnswersSnapshot: attempt.acceptedAnswersSnapshot ?? exam.acceptedAnswers ?? {},
+              regradedAt: Date.now(),
+            };
+            correctedAttempt.score = scorePdfAnswers(
+              correctedAttempt.answers,
+              answerKeyRows,
+              getAttemptQuestionCount(correctedExam, correctedAttempt),
+              getAttemptAcceptedAnswers(correctedExam, correctedAttempt),
+              correctedAttempt.overriddenCorrect,
+              getAttemptStartQuestion(correctedExam, correctedAttempt)
+            );
+            return correctedAttempt;
+          })
+        : correctedExam.attempts;
+      const updatedExam: PdfExam = {
+        ...correctedExam,
+        attempts,
+        bestScore: attempts.some((attempt) => !attempt.isContentTest)
+          ? Math.max(0, ...attempts.filter((attempt) => !attempt.isContentTest).map((attempt) => attempt.score))
+          : exam.bestScore,
+      };
+      const currentAttempt = attempts.find((attempt) => attempt.id === session.attemptId);
+      if (!currentAttempt) return;
+      const nextSession = { ...session, score: currentAttempt.score, examVersion: session.examVersion ?? exam.version ?? 1 };
+      await savePdfExam(updatedExam);
       await savePdfExamSession(nextSession);
-      setExam(regradedExam);
+      setExam(updatedExam);
       setSession(nextSession);
-      let history = getExamHistory();
-      for (const attempt of [...attempts].sort((a, b) => a.submittedAt - b.submittedAt)) {
-        if (attempt.isContentTest) continue;
-        history = replacePdfExamResult(createPdfExamRecord(regradedExam, attempt, answerKeyRows, regradedExam.acceptedAnswers));
+      if (shouldRegrade) {
+        for (const attempt of [...attempts].sort((a, b) => a.submittedAt - b.submittedAt)) {
+          if (attempt.isContentTest) continue;
+          replacePdfExamResult(createPdfExamRecord(updatedExam, attempt, answerKeyRows, updatedExam.acceptedAnswers));
+        }
       }
       handleResultsUpdated();
       setEditingAnswerKey(false);
       setStorageError(null);
     } catch (error) {
-      console.error('Could not regrade the PDF exam:', error);
-      setStorageError('Không thể lưu đáp án và chấm lại bài.');
+      console.error('Could not save the corrected PDF answer key:', error);
+      setStorageError('Không thể lưu đáp án đã sửa.');
     }
   };
 
@@ -709,22 +824,34 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
   if (!exam || !session || !subject || !scratchpad) return <p className="p-12 text-center text-sm text-slate-500">Đang mở đề PDF…</p>;
 
   const submitted = session.submitted;
-  const scoreable = scoreablePdfQuestionCount(exam.answerKey, exam.questionCount, exam.startQuestion ?? 1);
-  const unscored = exam.questionCount - scoreable;
+  const activeAttempt = submitted
+    ? exam.attempts.find((attempt) => attempt.id === session.attemptId) ??
+      [...exam.attempts].sort((a, b) => b.submittedAt - a.submittedAt)
+        .find((attempt) => attempt.submittedAt === session.submittedAt)
+    : undefined;
+  const gradingAnswerKey = getAttemptAnswerKey(exam, activeAttempt);
+  const gradingAcceptedAnswers = getAttemptAcceptedAnswers(exam, activeAttempt);
+  const gradingQuestionCount = getAttemptQuestionCount(exam, activeAttempt);
+  const gradingStartQuestion = getAttemptStartQuestion(exam, activeAttempt);
+  const gradingQuestionNumbers = submitted
+    ? pdfQuestionNumbers(gradingQuestionCount, gradingStartQuestion)
+    : questionNumbers;
+  const scoreable = scoreablePdfQuestionCount(gradingAnswerKey, gradingQuestionCount, gradingStartQuestion);
+  const unscored = gradingQuestionCount - scoreable;
   const score = submitted
-    ? session.score ?? scorePdfAnswers(session.answers, exam.answerKey, exam.questionCount, exam.acceptedAnswers, [], exam.startQuestion ?? 1)
+    ? session.score ?? scorePdfAnswers(session.answers, gradingAnswerKey, gradingQuestionCount, gradingAcceptedAnswers, [], gradingStartQuestion)
     : 0;
   const goal = getUserGoals()[exam.subject === 'math' ? 'targetMath' : exam.subject === 'literature' ? 'targetLiterature' : 'targetScience'];
   const answeredCount = Object.values(session.answers).filter((answer) => answer.trim()).length;
-  const correctCount = submitted ? questionNumbers.filter((number) => isPdfAnswerCorrect(number, session.answers[number], exam.answerKey, exam.acceptedAnswers) === true).length : 0;
-  const wrongCount = submitted ? questionNumbers.filter((number) => isPdfAnswerCorrect(number, session.answers[number], exam.answerKey, exam.acceptedAnswers) === false).length : 0;
+  const correctCount = submitted ? gradingQuestionNumbers.filter((number) => isPdfAnswerCorrect(number, session.answers[number], gradingAnswerKey, gradingAcceptedAnswers) === true).length : 0;
+  const wrongCount = submitted ? gradingQuestionNumbers.filter((number) => isPdfAnswerCorrect(number, session.answers[number], gradingAnswerKey, gradingAcceptedAnswers) === false).length : 0;
   const timeSpentMinutes = session.submittedAt ? Math.max(0, Math.round((session.submittedAt - session.startedAt) / 60000)) : 0;
   const currentOutcome = submitted
     ? isPdfAnswerCorrect(
         selectedQuestion,
         session.answers[selectedQuestion],
-        exam.answerKey,
-        exam.acceptedAnswers
+        gradingAnswerKey,
+        gradingAcceptedAnswers
       )
     : null;
   const answerPanel = (
@@ -732,7 +859,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
       <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-800">
         <div>
           <h2 className="font-extrabold">Phiếu đáp án</h2>
-          <p className="text-xs text-slate-500">{Object.values(session.answers).filter((answer) => answer.trim()).length}/{exam.questionCount} câu đã trả lời</p>
+          <p className="text-xs text-slate-500">{Object.values(session.answers).filter((answer) => answer.trim()).length}/{gradingQuestionCount} câu đã trả lời</p>
         </div>
         <button type="button" aria-label="Đóng phiếu đáp án" onClick={() => setAnswerDrawerOpen(false)} className="rounded-lg p-2 hover:bg-slate-100 dark:hover:bg-slate-800 lg:hidden"><X className="h-4 w-4" /></button>
       </div>
@@ -743,7 +870,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
           <div className="mt-2 grid grid-cols-2 gap-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
             <span>Đúng: {correctCount}</span>
             <span>Sai/bỏ trống: {wrongCount}</span>
-            <span>Đã trả lời: {answeredCount}/{exam.questionCount}</span>
+            <span>Đã trả lời: {answeredCount}/{gradingQuestionCount}</span>
             <span>Thời gian: {timeSpentMinutes} phút</span>
           </div>
           {session.examVersion && <p className="mt-1 text-[11px] text-slate-500">Phiên bản đề: v{session.examVersion}</p>}
@@ -751,10 +878,10 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
       )}
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         <div className="grid grid-cols-5 gap-1.5 sm:grid-cols-6 lg:grid-cols-5">
-          {questionNumbers.map((number) => {
+          {gradingQuestionNumbers.map((number) => {
             const answer = session.answers[number] ?? '';
             const outcome = submitted
-              ? isPdfAnswerCorrect(number, answer, exam.answerKey, exam.acceptedAnswers)
+              ? isPdfAnswerCorrect(number, answer, gradingAnswerKey, gradingAcceptedAnswers)
               : null;
             const current = number === selectedQuestion;
             return (
@@ -826,7 +953,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
             <p>Đáp án của tôi: <strong>{session.answers[selectedQuestion] || 'Bỏ trống'}</strong></p>
             {currentOutcome === null
               ? <p className="text-slate-500">Chưa có đáp án chuẩn — không tính điểm.</p>
-              : <p>Đáp án đúng: <strong className="text-emerald-700 dark:text-emerald-300">{exam.answerKey[selectedQuestion]}</strong></p>}
+              : <p>Đáp án đúng: <strong className="text-emerald-700 dark:text-emerald-300">{gradingAnswerKey[selectedQuestion]}</strong></p>}
             {currentOutcome === false && session.answers[selectedQuestion] &&
               session.answerModes[selectedQuestion] === 'fill' && (
                 <button type="button" onClick={() => setAppealQuestion(selectedQuestion)} className="rounded-lg border border-amber-300 px-3 py-1.5 font-bold text-amber-800 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-950">Tôi đúng</button>
@@ -875,6 +1002,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
               onClick={() => {
                 setAnswerKeyDraft(Object.entries(exam.answerKey).map(([number, answer]) => `${number}.${answer}`).join(' '));
                 setAnswerKeyRows({ ...exam.answerKey });
+                setCorrectionDecision('not_requested');
                 setEditingAnswerKey(true);
               }}
               className="inline-flex items-center gap-1 rounded-lg border border-amber-200 px-2 py-2 text-xs font-bold text-amber-800 hover:bg-amber-50 dark:border-amber-900 dark:text-amber-300 dark:hover:bg-amber-950"
@@ -997,7 +1125,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/60 p-3" role="dialog" aria-modal="true" aria-label="Sửa đáp án và chấm lại">
           <div className="flex max-h-[92dvh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-slate-900">
             <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-              <div><h3 className="font-extrabold">Sửa đáp án đúng và chấm lại</h3><p className="mt-1 text-xs text-slate-500">{exam.title} · thao tác chỉ có sau khi nộp</p></div>
+              <div><h3 className="font-extrabold">Sửa đáp án đúng</h3><p className="mt-1 text-xs text-slate-500">{exam.title} · bản sửa sẽ tạo phiên bản v{(exam.version ?? 1) + 1}; lượt đã nộp không tự đổi điểm</p></div>
               <button type="button" onClick={() => setEditingAnswerKey(false)} aria-label="Đóng" className="rounded-lg p-2 hover:bg-slate-100 dark:hover:bg-slate-800"><X className="h-4 w-4" /></button>
             </div>
             <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
@@ -1006,6 +1134,19 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
                 const diagnostics = parsePdfAnswerKey(answerKeyDraft, exam.questionCount, exam.startQuestion ?? 1);
                 return <p className="text-xs text-slate-500">Thiếu {diagnostics.missing.length} · trùng {diagnostics.duplicates.join(', ') || 'không'} · ngoài phạm vi {diagnostics.outOfRange.join(', ') || 'không'}</p>;
               })()}
+              <fieldset className="rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/30">
+                <legend className="px-1 text-xs font-extrabold text-amber-800 dark:text-amber-300">Áp dụng bản sửa này thế nào?</legend>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  <label className="flex cursor-pointer gap-2 rounded-lg bg-white/70 p-3 text-xs dark:bg-slate-900/60">
+                    <input type="radio" name="correction-decision" checked={correctionDecision === 'not_requested'} onChange={() => setCorrectionDecision('not_requested')} />
+                    <span><strong>Chỉ áp dụng lượt mới</strong><br />Lượt đã nộp giữ nguyên điểm và đáp án lúc nộp.</span>
+                  </label>
+                  <label className="flex cursor-pointer gap-2 rounded-lg bg-white/70 p-3 text-xs dark:bg-slate-900/60">
+                    <input type="radio" name="correction-decision" checked={correctionDecision === 'requested'} onChange={() => setCorrectionDecision('requested')} />
+                    <span><strong>Chấm lại lượt đã nộp</strong><br />Điểm cũ được giữ trong hồ sơ lượt làm trước khi chấm lại.</span>
+                  </label>
+                </div>
+              </fieldset>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {questionNumbers.map((number) => (
                   <label key={number} className="flex items-center gap-2 rounded-lg border border-slate-200 px-2 py-1.5 text-xs dark:border-slate-700">
@@ -1017,7 +1158,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
             </div>
             <div className="flex justify-end gap-2 border-t border-slate-200 px-4 py-3 dark:border-slate-800">
               <button type="button" onClick={() => setEditingAnswerKey(false)} className="rounded-lg px-3 py-2 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-800">Hủy</button>
-              <button type="button" onClick={() => void saveCorrectedAnswerKey()} className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700">Lưu và chấm lại</button>
+              <button type="button" onClick={() => void saveCorrectedAnswerKey()} className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700">{correctionDecision === 'requested' ? 'Lưu và chấm lại' : 'Lưu cho lượt mới'}</button>
             </div>
           </div>
         </div>
@@ -1027,10 +1168,10 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/60 p-4" role="dialog" aria-modal="true" aria-label="Đề nghị chấp nhận đáp án">
           <div className="w-full max-w-sm space-y-4 rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900">
             <h3 className="font-extrabold">Chấp nhận đáp án câu {appealQuestion}?</h3>
-            <p className="text-sm text-slate-600 dark:text-slate-300">Đáp án bạn nhập “{session.answers[appealQuestion]}” sẽ được thêm vào các cách viết đúng và chấm lại.</p>
+            <p className="text-sm text-slate-600 dark:text-slate-300">Đáp án bạn nhập “{session.answers[appealQuestion]}” sẽ được tính đúng cho riêng lượt này. Đáp án chuẩn của đề và các lượt khác không thay đổi.</p>
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => setAppealQuestion(null)} className="rounded-lg px-3 py-2 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-800">Hủy</button>
-              <button type="button" onClick={() => void appealFillAnswer(appealQuestion)} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white">Chấp nhận và chấm lại</button>
+              <button type="button" onClick={() => void appealFillAnswer(appealQuestion)} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white">Tính đúng lượt này</button>
             </div>
           </div>
         </div>
