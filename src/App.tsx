@@ -66,6 +66,7 @@ import { createPdfExamRecord, PdfExamPlayer } from './components/PdfExamPlayer';
 import {
   getAttemptKind,
   getSessionAttemptKind,
+  isContentTestAttempt,
   scorePdfAnswers,
   type PdfExam,
   type PdfExamAttempt,
@@ -215,11 +216,11 @@ function AuthenticatedApp({
         const updatedExam = {
           ...exam,
           attempts: [...exam.attempts, attempt],
-          bestScore: session.isContentTest ? exam.bestScore : Math.max(exam.bestScore ?? 0, score),
+          bestScore: getSessionAttemptKind(session) === 'content-test' ? exam.bestScore : Math.max(exam.bestScore ?? 0, score),
         };
         await savePdfExam(updatedExam);
         await savePdfExamSession({ ...session, attemptId: attempt.id, examVersion: attempt.examVersion, submitted: true, score, submittedAt });
-        if (!session.isContentTest) recordExamResult(createPdfExamRecord(updatedExam, attempt, updatedExam.answerKey, updatedExam.acceptedAnswers));
+        if (getSessionAttemptKind(session) !== 'content-test') recordExamResult(createPdfExamRecord(updatedExam, attempt, updatedExam.answerKey, updatedExam.acceptedAnswers));
         setExamHistory(getExamHistory());
         setMistakes(getMistakeNotebook());
       } catch (error) {
@@ -276,7 +277,12 @@ function AuthenticatedApp({
       if (!window.confirm('Bài PDF đang làm sẽ được thay bằng bài mới. Bạn có muốn tiếp tục?')) return;
     }
 
-    const latestAttempt = [...exam.attempts].sort((a, b) => b.submittedAt - a.submittedAt)[0];
+    const sortedAttempts = [...exam.attempts].sort((a, b) => b.submittedAt - a.submittedAt);
+    // "Xem lại" mặc định mở lượt luyện tập thật gần nhất; lượt kiểm thử nội
+    // dung được Owner mở riêng từ thư viện (Task 7.4), không chen vào đây.
+    const latestAttempt = mode === 'review'
+      ? sortedAttempts.find((attempt) => !isContentTestAttempt(attempt)) ?? sortedAttempts[0]
+      : sortedAttempts[0];
     if (mode === 'review' && !latestAttempt) return;
     const now = Date.now();
     const session: PdfExamSession = mode === 'review' && latestAttempt
