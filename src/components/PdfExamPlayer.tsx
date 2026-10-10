@@ -1057,7 +1057,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
             </div>
           )}
           {(submitted || isAdmin) && (exam.solutionBlob || exam.solutionPath) && (
-            <button type="button" onClick={() => void openSolution()} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-2 text-xs font-bold hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800" title="Mở lời giải">
+            <button type="button" onClick={() => void openSolution()} className="inline-flex min-h-[40px] items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-2 text-xs font-bold hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800" title="Mở lời giải">
               <BookOpenCheck className="h-4 w-4" /><span className="hidden sm:inline">Lời giải</span>
             </button>
           )}
@@ -1080,7 +1080,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
               onClick={() => {
                 if (window.confirm('Nộp bài và hiện đáp án đúng?')) void submitExam(session);
               }}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+              className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
             ><Send className="h-3.5 w-3.5" /><span className="hidden sm:inline">Nộp bài</span></button>
           )}
           {submitted && <span className="rounded-lg bg-emerald-100 px-2 py-1.5 text-xs font-extrabold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">{score}/{scoreable}</span>}
@@ -1112,7 +1112,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
       {storageError && <div role="alert" className="shrink-0 bg-rose-50 px-4 py-1.5 text-xs text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{storageError}</div>}
 
       <div className="relative flex min-h-0 flex-1">
-        <div className="h-full min-w-0 flex-1 lg:w-[72%] lg:flex-none">
+        <div className="h-full min-w-0 flex-1">
           <Suspense fallback={<p className="p-8 text-center text-sm text-slate-500">Đang tải trình xem PDF…</p>}>
             <PdfCanvasViewer
               file={exam.pdfBlob}
@@ -1137,7 +1137,7 @@ export const PdfExamPlayer: React.FC<PdfExamPlayerProps> = ({
             />
           </Suspense>
         </div>
-        <aside className="hidden h-full w-[28%] min-w-[310px] border-l border-slate-200 lg:block dark:border-slate-800">{answerPanel}</aside>
+        <aside className="hidden h-full w-[330px] shrink-0 border-l border-slate-200 lg:block xl:w-[380px] dark:border-slate-800">{answerPanel}</aside>
         {!answerDrawerOpen && (
           <button type="button" onClick={() => setAnswerDrawerOpen(true)} className="fixed bottom-5 right-4 z-30 inline-flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-3 text-sm font-bold text-white shadow-lg lg:hidden"><Menu className="h-4 w-4" /> Phiếu đáp án</button>
         )}

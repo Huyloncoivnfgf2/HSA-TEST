@@ -94,8 +94,10 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Center/Actions */}
-        <div className="flex items-center gap-1.5 sm:gap-2">
+        {/* Center/Actions: on narrow screens the action group scrolls
+            horizontally inside its own area instead of pushing the logo or
+            clipping buttons off-screen. No action is removed. */}
+        <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto sm:gap-2 [&>*]:shrink-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {/* Streak indicator */}
           <button
             type="button"
