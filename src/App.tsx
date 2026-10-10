@@ -40,6 +40,7 @@ import {
   calculateStreakDays,
   calculateTopicStats,
   getWeakestTopics,
+  getLearningRecommendations,
   recordExamResult,
 } from './services/analyticsService';
 import { Header } from './components/Header';
@@ -54,6 +55,7 @@ import { DataImportModal } from './components/DataImportModal';
 import { QuestionManagerModal } from './components/QuestionManagerModal';
 import { GoogleDriveModal } from './components/GoogleDriveModal';
 import { HomeScoreCards } from './components/HomeScoreCards';
+import { LearningInsights } from './components/LearningInsights';
 import { SubjectAnalyticsView } from './components/SubjectAnalyticsView';
 import { GoalSettingsModal } from './components/GoalSettingsModal';
 import { LearnerProfileModal } from './components/LearnerProfileModal';
@@ -259,6 +261,11 @@ function AuthenticatedApp({
   }, [examHistory, userGoals, studyProgress, mistakes]);
 
   const streakDays = useMemo(() => calculateStreakDays(), [examHistory, studyProgress]);
+
+  const learningRecommendations = useMemo(
+    () => getLearningRecommendations(),
+    [examHistory, mistakes, userGoals, studyProgress]
+  );
 
   // Sync exam session changes to localStorage
   const handleUpdateExamSession = (session: ExamSession) => {
@@ -824,6 +831,15 @@ function AuthenticatedApp({
                 setView('analytics');
               }}
               onOpenGoalSettings={() => setIsGoalsModalOpen(true)}
+            />
+
+            <LearningInsights
+              recommendations={learningRecommendations.filter(
+                (rec) => !(rec.kind === 'weak-topic' && dailyWeakRecommendation && rec.topic === dailyWeakRecommendation.topic && rec.subject === dailyWeakRecommendation.subject)
+              )}
+              onPracticeTopic={handlePracticeTopic}
+              onOpenMistakes={() => setIsMistakesModalOpen(true)}
+              onStartSubject={(subject) => setSubjectModalSubject(subject)}
             />
 
             {/* Section 2: Choose Subject (3 Cards) */}

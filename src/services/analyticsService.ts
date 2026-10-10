@@ -9,6 +9,7 @@ import {
   DailyActivity,
   ErrorClassification,
   ReliabilityAssessment,
+  LearningRecommendation,
 } from '../types/analytics';
 import { userStorage as localStorage } from './userStorage';
 
@@ -594,6 +595,80 @@ export function getAnalyticsSummary(practiceProgress?: any): AnalyticsSummary {
     todayQuestionsAnswered,
     totalExamsTaken: history.length,
   };
+}
+
+// ==================== NEXT-STEP RECOMMENDATIONS ====================
+const SUBJECT_LABELS: Record<SubjectType, string> = {
+  math: 'Định lượng',
+  literature: 'Định tính',
+  science: 'Khoa học',
+};
+
+// Đề xuất hoạt động học tiếp theo (Task 8.5), suy ra từ dữ liệu học thật đã
+// ghi nhận: phần chưa có bài, chuyên đề yếu có đủ dữ liệu, Sổ lỗi đang tồn,
+// mục tiêu câu hôm nay và chuỗi ngày học.
+export function getLearningRecommendations(): LearningRecommendation[] {
+  const history = getExamHistory();
+  const goals = getUserGoals();
+  const mistakes = getMistakeNotebook();
+  const summary = getAnalyticsSummary();
+  const recommendations: LearningRecommendation[] = [];
+
+  (['math', 'literature', 'science'] as SubjectType[]).forEach((subj) => {
+    if (summary.reliability[subj].examsTaken === 0) {
+      recommendations.push({
+        id: `first-test-${subj}`,
+        kind: 'first-test',
+        subject: subj,
+        title: `Làm bài Kiểm tra đầu tiên phần ${SUBJECT_LABELS[subj]}`,
+        detail: 'Phần này chưa có dữ liệu học thật, nên Dashboard chưa thể phân tích. Làm một bài Kiểm tra bấm giờ để bắt đầu có số liệu.',
+      });
+    }
+  });
+
+  const weakestAcrossSubjects = (['math', 'literature', 'science'] as SubjectType[])
+    .flatMap((subj) => getWeakestTopics(subj).map((stat) => ({ subj, stat })))
+    .sort((a, b) => a.stat.accuracy - b.stat.accuracy)
+    .slice(0, 2);
+  weakestAcrossSubjects.forEach(({ subj, stat }) => {
+    recommendations.push({
+      id: `weak-topic-${subj}-${stat.topic}`,
+      kind: 'weak-topic',
+      subject: subj,
+      topic: stat.topic,
+      title: `Luyện chuyên đề "${stat.topic}" (${SUBJECT_LABELS[subj]})`,
+      detail: `Tỉ lệ đúng hiện ${stat.accuracy}% trên ${stat.totalAnswered} câu đã ghi nhận. Đây là chuyên đề yếu có đủ dữ liệu để kết luận.`,
+    });
+  });
+
+  if (mistakes.length >= 5) {
+    recommendations.push({
+      id: 'review-mistakes',
+      kind: 'review-mistakes',
+      title: `Ôn lại Sổ lỗi (${mistakes.length} câu đang chờ)`,
+      detail: 'Các câu sai được ôn theo FSRS cho tới khi đúng 2 lần liên tiếp sẽ tự rời Sổ lỗi.',
+    });
+  }
+
+  if (summary.todayQuestionsAnswered < goals.dailyQuestionGoal) {
+    recommendations.push({
+      id: 'daily-goal',
+      kind: 'daily-goal',
+      title: `Hoàn thành mục tiêu hôm nay: còn ${goals.dailyQuestionGoal - summary.todayQuestionsAnswered} câu`,
+      detail: `Hôm nay đã làm ${summary.todayQuestionsAnswered}/${goals.dailyQuestionGoal} câu theo mục tiêu ngày.`,
+    });
+  }
+
+  if (summary.streakDays === 0 && history.length > 0) {
+    recommendations.push({
+      id: 'keep-streak',
+      kind: 'keep-streak',
+      title: 'Bắt đầu lại chuỗi ngày học',
+      detail: 'Hôm nay chưa có hoạt động học thật nào. Một phiên ngắn cũng đủ giữ nhịp học.',
+    });
+  }
+
+  return recommendations.slice(0, 4);
 }
 
 // ==================== FULL BACKUP EXPORT / IMPORT ====================

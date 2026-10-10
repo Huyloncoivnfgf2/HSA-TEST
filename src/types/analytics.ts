@@ -100,6 +100,15 @@ export interface ReliabilityAssessment {
   spanDays: number;
 }
 
+export interface LearningRecommendation {
+  id: string;
+  kind: 'first-test' | 'weak-topic' | 'review-mistakes' | 'daily-goal' | 'keep-streak';
+  subject?: SubjectType;
+  topic?: string;
+  title: string;
+  detail: string;
+}
+
 export interface AnalyticsSummary {
   goals: UserGoals;
   latestExamScores: Record<SubjectType, number | null>;
